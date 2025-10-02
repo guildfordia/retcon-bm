@@ -9,7 +9,10 @@ interface P2PDocument {
   title: string
   description?: string
   filename?: string
-  ipfsHash?: string
+  ipfsHash?: string // Legacy field
+  ipfsCID?: string // New IPFS field
+  contentType?: string
+  contentSize?: number
   size?: number
   mimeType?: string
   collectionId: string
@@ -56,9 +59,46 @@ export default function GlobalFeedDocuments({ filters }: GlobalFeedDocumentsProp
   const [editingDocument, setEditingDocument] = useState<FeedItem | null>(null)
   const [viewingHistory, setViewingHistory] = useState<FeedItem | null>(null)
 
+  // IPFS content cache: documentId -> content (base64 for images, text for quotes/links)
+  const [ipfsContent, setIpfsContent] = useState<Record<string, string>>({})
+
   const observerTarget = useRef<HTMLDivElement>(null)
 
   const limit = 20
+
+  // Helper function to fetch content from IPFS
+  const fetchIPFSContent = useCallback(async (cid: string, contentType: string, documentId: string) => {
+    try {
+      // Check if already cached
+      if (ipfsContent[documentId]) {
+        return ipfsContent[documentId]
+      }
+
+      // For images, get base64
+      if (contentType?.startsWith('image/')) {
+        const response = await fetch(`http://localhost:4001/ipfs/retrieve-base64/${cid}?contentType=${encodeURIComponent(contentType)}`)
+        if (!response.ok) throw new Error('Failed to fetch image from IPFS')
+        const data = await response.json()
+        const dataUrl = `data:${contentType};base64,${data.base64}`
+
+        // Cache it
+        setIpfsContent(prev => ({ ...prev, [documentId]: dataUrl }))
+        return dataUrl
+      } else {
+        // For text (quotes/links), get plain text
+        const response = await fetch(`http://localhost:4001/ipfs/retrieve/${cid}?contentType=text/plain`)
+        if (!response.ok) throw new Error('Failed to fetch text from IPFS')
+        const text = await response.text()
+
+        // Cache it
+        setIpfsContent(prev => ({ ...prev, [documentId]: text }))
+        return text
+      }
+    } catch (error) {
+      console.error('Error fetching IPFS content:', error)
+      return null
+    }
+  }, [ipfsContent])
 
   // Fetch feed items
   const fetchFeedItems = useCallback(async (currentOffset: number, append = false) => {
@@ -117,6 +157,17 @@ export default function GlobalFeedDocuments({ filters }: GlobalFeedDocumentsProp
   useEffect(() => {
     fetchFeedItems(0)
   }, [filters.types.join(','), filters.keywords.join(','), filters.title, fetchFeedItems])
+
+  // Fetch IPFS content for all documents when feed items change
+  useEffect(() => {
+    feedItems.forEach(item => {
+      const doc = item.document
+      if (doc.ipfsCID && doc.contentType && !ipfsContent[doc.id]) {
+        // Fetch content asynchronously
+        fetchIPFSContent(doc.ipfsCID, doc.contentType, doc.id)
+      }
+    })
+  }, [feedItems, fetchIPFSContent, ipfsContent])
 
   // Intersection observer for infinite scroll
   useEffect(() => {
@@ -285,15 +336,23 @@ export default function GlobalFeedDocuments({ filters }: GlobalFeedDocumentsProp
             {item.document.documentType === 'image' && (
               <div>
                 <div className="text-4xl mb-3">🖼️</div>
-                <div className="bg-gray-100 dark:bg-gray-800 h-40 flex items-center justify-center mb-3 text-gray-400 dark:text-gray-500">
-                  Image Preview
-                </div>
+                {ipfsContent[item.document.id] ? (
+                  <img
+                    src={ipfsContent[item.document.id]}
+                    alt={item.document.title}
+                    className="w-full h-40 object-cover mb-3 rounded"
+                  />
+                ) : (
+                  <div className="bg-gray-100 dark:bg-gray-800 h-40 flex items-center justify-center mb-3 text-gray-400 dark:text-gray-500">
+                    Loading image...
+                  </div>
+                )}
                 <h3 className="font-semibold text-gray-900 dark:text-white mb-1 line-clamp-1">
                   {item.document.title}
                 </h3>
-                {item.document.mimeType && item.document.size && (
+                {(item.document.mimeType || item.document.contentType) && (item.document.size || item.document.contentSize) && (
                   <p className="text-xs text-gray-500 dark:text-gray-400">
-                    {item.document.mimeType} • {formatFileSize(item.document.size)}
+                    {item.document.mimeType || item.document.contentType} • {formatFileSize(item.document.size || item.document.contentSize || 0)}
                   </p>
                 )}
               </div>
@@ -502,9 +561,17 @@ export default function GlobalFeedDocuments({ filters }: GlobalFeedDocumentsProp
 
               {selectedDocument.document.documentType === 'image' && (
                 <div className="space-y-4">
-                  <div className="bg-gray-100 dark:bg-gray-800 h-64 flex items-center justify-center text-gray-400 dark:text-gray-500">
-                    Image Preview
-                  </div>
+                  {ipfsContent[selectedDocument.document.id] ? (
+                    <img
+                      src={ipfsContent[selectedDocument.document.id]}
+                      alt={selectedDocument.document.title}
+                      className="w-full h-auto max-h-[500px] object-contain bg-gray-100 dark:bg-gray-800"
+                    />
+                  ) : (
+                    <div className="bg-gray-100 dark:bg-gray-800 h-64 flex items-center justify-center text-gray-400 dark:text-gray-500">
+                      Loading image...
+                    </div>
+                  )}
 
                   {selectedDocument.document.description && (
                     <p className="text-gray-700 dark:text-gray-300">
@@ -513,10 +580,12 @@ export default function GlobalFeedDocuments({ filters }: GlobalFeedDocumentsProp
                   )}
 
                   <div className="space-y-2">
-                    {selectedDocument.document.ipfsHash && (
+                    {(selectedDocument.document.ipfsCID || selectedDocument.document.ipfsHash) && (
                       <div>
-                        <span className="font-medium text-gray-700 dark:text-gray-300">IPFS Hash: </span>
-                        <span className="text-gray-900 dark:text-white font-mono text-sm break-all">{selectedDocument.document.ipfsHash}</span>
+                        <span className="font-medium text-gray-700 dark:text-gray-300">IPFS CID: </span>
+                        <span className="text-gray-900 dark:text-white font-mono text-sm break-all">
+                          {selectedDocument.document.ipfsCID || selectedDocument.document.ipfsHash}
+                        </span>
                       </div>
                     )}
                     {selectedDocument.document.filename && (

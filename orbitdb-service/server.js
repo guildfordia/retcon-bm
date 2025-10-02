@@ -3,6 +3,7 @@ import cors from 'cors'
 import { createServer } from 'http'
 import { WebSocketServer } from 'ws'
 import { createHelia } from 'helia'
+import { unixfs } from '@helia/unixfs'
 import { createLibp2p } from 'libp2p'
 import { webSockets } from '@libp2p/websockets'
 import { noise } from '@chainsafe/libp2p-noise'
@@ -14,6 +15,7 @@ import { multiaddr } from '@multiformats/multiaddr'
 import { fileURLToPath } from 'url'
 import { dirname, join } from 'path'
 import fs from 'fs/promises'
+import multer from 'multer'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const DATA_DIR = process.env.ORBITDB_DATA_DIR || join(__dirname, 'data')
@@ -25,7 +27,10 @@ await fs.mkdir(DATA_DIR, { recursive: true })
 
 const app = express()
 app.use(cors())
-app.use(express.json())
+app.use(express.json({ limit: '50mb' })) // Increase limit for base64 encoded images
+
+// Configure multer for file uploads (memory storage)
+const upload = multer({ storage: multer.memoryStorage() })
 
 const PORT = process.env.PORT || 4001
 const WS_PORT = process.env.WS_PORT || 9091
@@ -53,12 +58,15 @@ const libp2p = await createLibp2p({
 })
 
 // Create Helia and OrbitDB instances
-const helia = await createHelia({ 
+const helia = await createHelia({
   libp2p,
   datastore: null // Will use default
 })
 
-const orbitdb = await createOrbitDB({ 
+// Create UnixFS instance for file storage
+const fs_ipfs = unixfs(helia)
+
+const orbitdb = await createOrbitDB({
   ipfs: helia,
   directory: DATA_DIR
 })
@@ -318,6 +326,108 @@ app.get('/kv/access', async (req, res) => {
     res.json(accessInfo)
   } catch (error) {
     console.error('Error getting access info:', error)
+    res.status(500).json({ error: error.message })
+  }
+})
+
+// ===== IPFS Content Storage Endpoints =====
+
+/**
+ * Upload content to IPFS
+ * Supports both file uploads (multipart/form-data) and JSON text content
+ * Returns CID (Content Identifier)
+ */
+app.post('/ipfs/upload', upload.single('file'), async (req, res) => {
+  try {
+    let content
+    let contentType
+
+    // Handle file upload (for images)
+    if (req.file) {
+      content = req.file.buffer
+      contentType = req.file.mimetype
+    }
+    // Handle text content from JSON body (for quotes/links)
+    else if (req.body.content) {
+      content = new TextEncoder().encode(req.body.content)
+      contentType = req.body.contentType || 'text/plain'
+    }
+    else {
+      return res.status(400).json({ error: 'No content provided. Send either a file or { content: "text" }' })
+    }
+
+    // Add content to IPFS using UnixFS
+    const cid = await fs_ipfs.addBytes(content)
+
+    console.log(`✓ Uploaded to IPFS: ${cid.toString()} (${contentType})`)
+
+    res.json({
+      cid: cid.toString(),
+      size: content.length,
+      contentType
+    })
+  } catch (error) {
+    console.error('Error uploading to IPFS:', error)
+    res.status(500).json({ error: error.message })
+  }
+})
+
+/**
+ * Retrieve content from IPFS by CID
+ * Returns the raw bytes with appropriate Content-Type header
+ */
+app.get('/ipfs/retrieve/:cid', async (req, res) => {
+  try {
+    const { cid } = req.params
+
+    // Get content from IPFS
+    const chunks = []
+    for await (const chunk of fs_ipfs.cat(cid)) {
+      chunks.push(chunk)
+    }
+
+    const content = Buffer.concat(chunks)
+
+    console.log(`✓ Retrieved from IPFS: ${cid} (${content.length} bytes)`)
+
+    // Set appropriate headers
+    const contentType = req.query.contentType || 'application/octet-stream'
+    res.setHeader('Content-Type', contentType)
+    res.setHeader('Content-Length', content.length)
+    res.send(content)
+  } catch (error) {
+    console.error('Error retrieving from IPFS:', error)
+    res.status(500).json({ error: error.message })
+  }
+})
+
+/**
+ * Retrieve content from IPFS as base64
+ * Useful for embedding images directly in JSON responses
+ */
+app.get('/ipfs/retrieve-base64/:cid', async (req, res) => {
+  try {
+    const { cid } = req.params
+
+    // Get content from IPFS
+    const chunks = []
+    for await (const chunk of fs_ipfs.cat(cid)) {
+      chunks.push(chunk)
+    }
+
+    const content = Buffer.concat(chunks)
+    const base64 = content.toString('base64')
+
+    console.log(`✓ Retrieved from IPFS as base64: ${cid} (${content.length} bytes)`)
+
+    res.json({
+      cid,
+      base64,
+      size: content.length,
+      contentType: req.query.contentType || 'application/octet-stream'
+    })
+  } catch (error) {
+    console.error('Error retrieving from IPFS:', error)
     res.status(500).json({ error: error.message })
   }
 })

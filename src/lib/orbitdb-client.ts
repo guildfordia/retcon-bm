@@ -355,6 +355,103 @@ export class OrbitDBClient {
       return []
     }
   }
+
+  // ===== IPFS Content Storage Methods =====
+
+  /**
+   * Upload text content to IPFS
+   * Used for quotes (quote text) and links (URL)
+   *
+   * @param content - Text string to upload
+   * @param contentType - MIME type (default: text/plain)
+   * @returns CID (Content Identifier)
+   */
+  async uploadTextToIPFS(content: string, contentType: string = 'text/plain'): Promise<string> {
+    const response = await fetch(`${this.baseUrl}/ipfs/upload`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ content, contentType })
+    })
+
+    if (!response.ok) {
+      throw new Error(`Failed to upload text to IPFS: ${response.statusText}`)
+    }
+
+    const result = await response.json()
+    return result.cid
+  }
+
+  /**
+   * Upload file (binary) to IPFS
+   * Used for images
+   *
+   * @param file - File object or Buffer
+   * @returns CID (Content Identifier)
+   */
+  async uploadFileToIPFS(file: File | Buffer, filename?: string): Promise<string> {
+    const formData = new FormData()
+
+    if (file instanceof Buffer) {
+      // Convert Buffer to Blob for FormData
+      const blob = new Blob([file])
+      formData.append('file', blob, filename || 'file')
+    } else {
+      formData.append('file', file)
+    }
+
+    const response = await fetch(`${this.baseUrl}/ipfs/upload`, {
+      method: 'POST',
+      body: formData
+    })
+
+    if (!response.ok) {
+      throw new Error(`Failed to upload file to IPFS: ${response.statusText}`)
+    }
+
+    const result = await response.json()
+    return result.cid
+  }
+
+  /**
+   * Retrieve text content from IPFS by CID
+   *
+   * @param cid - Content Identifier
+   * @returns Text content
+   */
+  async retrieveTextFromIPFS(cid: string): Promise<string> {
+    const response = await fetch(`${this.baseUrl}/ipfs/retrieve/${cid}?contentType=text/plain`)
+
+    if (!response.ok) {
+      throw new Error(`Failed to retrieve text from IPFS: ${response.statusText}`)
+    }
+
+    return response.text()
+  }
+
+  /**
+   * Retrieve content from IPFS as base64
+   * Useful for images - can be embedded directly in HTML
+   *
+   * @param cid - Content Identifier
+   * @param contentType - MIME type (e.g., image/jpeg)
+   * @returns Object with base64 data and metadata
+   */
+  async retrieveBase64FromIPFS(cid: string, contentType: string = 'application/octet-stream'): Promise<{
+    cid: string
+    base64: string
+    size: number
+    contentType: string
+  }> {
+    const response = await fetch(`${this.baseUrl}/ipfs/retrieve-base64/${cid}?contentType=${encodeURIComponent(contentType)}`)
+
+    if (!response.ok) {
+      throw new Error(`Failed to retrieve base64 from IPFS: ${response.statusText}`)
+    }
+
+    return response.json()
+  }
 }
 
 export const orbitdbClient = new OrbitDBClient()
