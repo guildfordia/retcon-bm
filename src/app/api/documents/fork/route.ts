@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { v4 as uuidv4 } from 'uuid'
+// uuid removed - using crypto.randomUUID()
 import { getDatabase } from '@/lib/database'
 
 export async function POST(request: NextRequest) {
@@ -38,7 +38,7 @@ export async function POST(request: NextRequest) {
 
     const transaction = db.transaction(() => {
       // Create forked document
-      const forkedDocumentId = uuidv4()
+      const forkedDocumentId = crypto.randomUUID()
       const forkedFilename = `${forkedDocumentId}_fork_of_${originalDoc.original_filename}`
 
       const insertForkedDoc = db.prepare(`
@@ -70,7 +70,7 @@ export async function POST(request: NextRequest) {
         VALUES (?, ?, ?, ?, ?)
       `)
 
-      insertFork.run(uuidv4(), originalDocumentId, forkedDocumentId, forkedBy, reason)
+      insertFork.run(crypto.randomUUID(), originalDocumentId, forkedDocumentId, forkedBy, reason)
 
       // Update original document fork count
       const updateOriginal = db.prepare(`
@@ -89,7 +89,7 @@ export async function POST(request: NextRequest) {
       `)
 
       logActivity.run(
-        uuidv4(),
+        crypto.randomUUID(),
         forkedBy,
         'fork',
         'document',

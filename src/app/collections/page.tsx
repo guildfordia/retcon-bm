@@ -1,249 +1,462 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { useP2P } from '@/contexts/P2PContext'
+import P2PDocumentsApi from '@/components/P2PDocumentsApi'
+import PinnedDocuments from '@/components/PinnedDocuments'
 
-export default function Collections() {
+interface P2PCollection {
+  id: string
+  name: string
+  description: string
+  orbitAddress: string
+  storeName?: string
+  peerId: string
+  username: string
+  accessType?: string
+  created: number
+  lastSync: number
+  peers: string[]
+  documentCount: number
+}
+
+function CollectionsContent() {
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const { onlineUsers } = useP2P()
+  const [p2pCollections, setP2pCollections] = useState<P2PCollection[]>([])
+  const [selectedCollection, setSelectedCollection] = useState<P2PCollection | null>(null)
+  const [userId, setUserId] = useState('')
+  const [loading, setLoading] = useState(true)
   const [view, setView] = useState<'grid' | 'list'>('grid')
-  const [filter, setFilter] = useState<'all' | 'public' | 'private' | 'mine'>('all')
+  const [filter, setFilter] = useState<'all' | 'mine'>('mine')
+  const [showCreateModal, setShowCreateModal] = useState(false)
+  const [userHasCollection, setUserHasCollection] = useState(false)
 
-  const mockCollections = [
-    {
-      id: 1,
-      name: "AI Research Archive",
-      description: "Collection of foundational papers and research in artificial intelligence, machine learning, and deep learning.",
-      documentCount: 47,
-      isPublic: true,
-      creator: "Dr. Sarah Chen",
-      createdAt: "2024-01-15",
-      lastActivity: "2 hours ago",
-      participants: 8,
-      tags: ["AI", "Machine Learning", "Research"]
-    },
-    {
-      id: 2,
-      name: "Climate Data Analysis",
-      description: "Environmental data, climate models, and research papers on climate change impacts.",
-      documentCount: 23,
-      isPublic: true,
-      creator: "Prof. Marcus Johnson",
-      createdAt: "2024-02-03",
-      lastActivity: "1 day ago",
-      participants: 12,
-      tags: ["Climate", "Environment", "Data"]
-    },
-    {
-      id: 3,
-      name: "Philosophy & Ethics",
-      description: "Personal collection of philosophical texts and notes on ethics and moral philosophy.",
-      documentCount: 15,
-      isPublic: false,
-      creator: "Alice Researcher",
-      createdAt: "2024-02-20",
-      lastActivity: "3 days ago",
-      participants: 1,
-      tags: ["Philosophy", "Ethics", "Theory"]
-    },
-    {
-      id: 4,
-      name: "Open Science Initiative",
-      description: "Collaborative collection promoting open access research and reproducible science.",
-      documentCount: 31,
-      isPublic: true,
-      creator: "Open Science Collective",
-      createdAt: "2024-01-08",
-      lastActivity: "5 hours ago",
-      participants: 25,
-      tags: ["Open Science", "Reproducibility", "Collaboration"]
+  useEffect(() => {
+    const token = localStorage.getItem('token')
+    if (!token) {
+      router.push('/auth')
+      return
     }
-  ]
 
-  const filteredCollections = mockCollections.filter(collection => {
-    switch (filter) {
-      case 'public': return collection.isPublic
-      case 'private': return !collection.isPublic
-      case 'mine': return collection.creator === "Alice Researcher"
-      default: return true
+    const user = localStorage.getItem('userId')
+    if (user) {
+      setUserId(user)
     }
-  })
+    fetchP2PCollections()
+  }, [filter])
+
+  // Handle URL-based collection opening
+  useEffect(() => {
+    const collectionId = searchParams.get('id')
+    if (collectionId && p2pCollections.length > 0) {
+      const collection = p2pCollections.find(c => c.id === decodeURIComponent(collectionId))
+      if (collection) {
+        setSelectedCollection(collection)
+      }
+    }
+  }, [searchParams, p2pCollections])
+
+  const fetchP2PCollections = async () => {
+    try {
+      setLoading(true)
+      const userId = localStorage.getItem('userId')
+      let url = '/api/collections/p2p'
+
+      if (filter === 'mine' && userId) {
+        url += `?peerId=${userId}`
+      }
+
+      const response = await fetch(url)
+      if (response.ok) {
+        const data = await response.json()
+        setP2pCollections(data.collections || [])
+
+        if (userId) {
+          const userP2PCollections = data.collections.filter((c: P2PCollection) => c.peerId === userId)
+          setUserHasCollection(userP2PCollections.length > 0)
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching P2P collections:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleCreateCollection = async (name: string, description: string) => {
+    try {
+      const userId = localStorage.getItem('userId')
+      const response = await fetch('/api/collections/p2p', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          name,
+          description,
+          peerId: userId || `peer-${Date.now()}`,
+          accessType: 'public'
+        })
+      })
+
+      if (response.ok) {
+        setShowCreateModal(false)
+        fetchP2PCollections()
+      }
+    } catch (error) {
+      console.error('Error creating collection:', error)
+    }
+  }
+
+  const openCollection = (collection: P2PCollection) => {
+    setSelectedCollection(collection)
+    // Update URL without navigation
+    window.history.pushState({}, '', `/collections?id=${encodeURIComponent(collection.id)}`)
+  }
+
+  const closeCollection = () => {
+    setSelectedCollection(null)
+    // Reset URL
+    window.history.pushState({}, '', '/collections')
+  }
+
+  const handleShare = () => {
+    if (!selectedCollection) return
+    const shareUrl = `${window.location.origin}/collections?id=${encodeURIComponent(selectedCollection.id)}`
+    navigator.clipboard.writeText(shareUrl)
+    alert('P2P Collection link copied to clipboard!')
+  }
+
+  const formatDate = (timestamp: number) => {
+    return new Date(timestamp).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    })
+  }
+
+  const P2PCollectionCard = ({ collection }: { collection: P2PCollection }) => (
+    <div
+      className="bg-white dark:bg-gray-900 border-l-4 border-gray-900 dark:border-gray-100 border-t border-r border-b border-gray-300 dark:border-gray-700 hover:border-gray-900 dark:hover:border-gray-100 transition-colors cursor-pointer p-6"
+      onClick={() => openCollection(collection)}
+    >
+      <div className="mb-4 flex items-center">
+        <div className="w-2 h-2 bg-gray-600 dark:bg-gray-400 mr-2"></div>
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">{collection.name}</h3>
+      </div>
+
+      {collection.description && (
+        <p className="text-gray-600 dark:text-gray-300 text-sm mb-4">{collection.description}</p>
+      )}
+
+      <div className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+        <div className="mb-1">
+          <span className="font-medium text-gray-700 dark:text-gray-300">Created by:</span>{' '}
+          <span className="text-gray-900 dark:text-white">{collection.username}</span>
+        </div>
+        <div className="truncate">OrbitDB: {collection.orbitAddress}</div>
+        <div>Peer: {collection.peerId.slice(0, 12)}...</div>
+      </div>
+
+      <div className="flex justify-between items-center text-sm text-gray-500 dark:text-gray-400">
+        <span>{collection.documentCount} documents</span>
+        <div className="flex items-center space-x-2">
+          <span>{collection.peers.length} peers</span>
+          <div className="w-2 h-2 bg-gray-600 dark:bg-gray-400" title="P2P Active"></div>
+        </div>
+      </div>
+    </div>
+  )
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Collections</h1>
-        <p className="text-gray-600 dark:text-gray-400 mt-2">
-          Collaborative document collections and research projects
-        </p>
-      </div>
+    <div className="min-h-screen bg-white dark:bg-black">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="flex justify-between items-center mb-8">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Collections</h1>
+            <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+              Decentralized P2P Collections
+            </p>
+          </div>
 
-      {/* Actions Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6 space-y-4 sm:space-y-0">
-        <div className="flex items-center space-x-4">
-          <button className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors">
-            <svg className="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-            </svg>
-            Create Collection
-          </button>
-          
-          {/* Filter Buttons */}
-          <div className="flex bg-gray-100 dark:bg-gray-800 rounded-lg p-1">
-            {[
-              { key: 'all', label: 'All' },
-              { key: 'public', label: 'Public' },
-              { key: 'private', label: 'Private' },
-              { key: 'mine', label: 'Mine' }
-            ].map(({ key, label }) => (
+          <div className="flex items-center gap-4">
+            <div className="bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 px-4 py-2">
+              <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                P2P Mode
+              </span>
+            </div>
+            <div className="flex bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700">
+              {(['all', 'mine'] as const).map(f => (
+                <button
+                  key={f}
+                  onClick={() => setFilter(f)}
+                  className={`px-4 py-2 text-sm font-medium transition-colors ${
+                    filter === f
+                      ? 'bg-gray-900 text-white dark:bg-gray-100 dark:text-black'
+                      : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'
+                  }`}
+                >
+                  {f === 'all' ? 'All Collections' : 'My Collections'}
+                </button>
+              ))}
+            </div>
+
+            <div className="flex bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700">
               <button
-                key={key}
-                onClick={() => setFilter(key as any)}
-                className={`px-3 py-1 text-sm rounded-md transition-colors ${
-                  filter === key
-                    ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
-                    : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
-                }`}
+                onClick={() => setView('grid')}
+                className={`p-2 ${view === 'grid' ? 'text-gray-900 dark:text-gray-100' : 'text-gray-600 dark:text-gray-400'}`}
               >
-                {label}
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+                </svg>
               </button>
+              <button
+                onClick={() => setView('list')}
+                className={`p-2 ${view === 'list' ? 'text-gray-900 dark:text-gray-100' : 'text-gray-600 dark:text-gray-400'}`}
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                </svg>
+              </button>
+            </div>
+
+            {!userHasCollection && userId ? (
+              <button
+                onClick={() => setShowCreateModal(true)}
+                className="bg-gray-900 dark:bg-gray-100 text-white dark:text-black px-4 py-2 hover:bg-gray-700 dark:hover:bg-gray-300 transition-colors"
+              >
+                New P2P Collection
+              </button>
+            ) : userId ? (
+              <div className="px-4 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 text-gray-600 dark:text-gray-400 text-sm">
+                You have your collection
+              </div>
+            ) : null}
+          </div>
+        </div>
+
+        {loading ? (
+          <div className="flex justify-center items-center h-64">
+            <div className="animate-spin h-12 w-12 border-b-2 border-gray-900 dark:border-gray-100"></div>
+          </div>
+        ) : p2pCollections.length === 0 ? (
+          <div className="text-center py-12">
+            <p className="text-gray-500 dark:text-gray-400">
+              No P2P collections found
+            </p>
+          </div>
+        ) : (
+          <div className={view === 'grid' ? 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6' : 'space-y-4'}>
+            {p2pCollections.map(collection => (
+              view === 'grid' ? (
+                <P2PCollectionCard key={collection.id} collection={collection} />
+              ) : (
+                <div
+                  key={collection.id}
+                  className="bg-white dark:bg-gray-900 border-l-4 border-gray-900 dark:border-gray-100 border-t border-r border-b border-gray-300 dark:border-gray-700 hover:border-gray-900 dark:hover:border-gray-100 transition-colors cursor-pointer p-4"
+                  onClick={() => openCollection(collection)}
+                >
+                  <div className="flex justify-between items-center">
+                    <div className="flex-1">
+                      <div className="flex items-center mb-1">
+                        <div className="w-2 h-2 bg-gray-600 dark:bg-gray-400 mr-2"></div>
+                        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">{collection.name}</h3>
+                      </div>
+                      {collection.description && (
+                        <p className="text-gray-600 dark:text-gray-300 text-sm mt-1">{collection.description}</p>
+                      )}
+                      <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                        <div className="mb-1">
+                          <span className="font-medium text-gray-700 dark:text-gray-300">Created by:</span>{' '}
+                          <span className="text-gray-900 dark:text-white">{collection.username}</span>
+                        </div>
+                        <div>OrbitDB: {collection.orbitAddress}</div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-4 ml-4">
+                      <span className="text-sm text-gray-500 dark:text-gray-400">
+                        {collection.documentCount} documents
+                      </span>
+                      <span className="text-sm text-gray-500 dark:text-gray-400">
+                        {collection.peers.length} peers
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )
             ))}
           </div>
-        </div>
-
-        {/* View Toggle */}
-        <div className="flex items-center space-x-2">
-          <span className="text-sm text-gray-600 dark:text-gray-400">View:</span>
-          <div className="flex bg-gray-100 dark:bg-gray-800 rounded-lg p-1">
-            <button
-              onClick={() => setView('grid')}
-              className={`p-2 rounded ${view === 'grid' ? 'bg-white dark:bg-gray-700 shadow-sm' : ''}`}
-            >
-              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                <path d="M5 3a2 2 0 00-2 2v2a2 2 0 002 2h2a2 2 0 002-2V5a2 2 0 00-2-2H5zM5 11a2 2 0 00-2 2v2a2 2 0 002 2h2a2 2 0 002-2v-2a2 2 0 00-2-2H5zM11 5a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V5zM11 13a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
-              </svg>
-            </button>
-            <button
-              onClick={() => setView('list')}
-              className={`p-2 rounded ${view === 'list' ? 'bg-white dark:bg-gray-700 shadow-sm' : ''}`}
-            >
-              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M3 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" clipRule="evenodd" />
-              </svg>
-            </button>
-          </div>
-        </div>
+        )}
       </div>
 
-      {/* Collections Grid/List */}
-      {view === 'grid' ? (
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredCollections.map((collection) => (
-            <div key={collection.id} className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border hover:shadow-md transition-shadow cursor-pointer">
-              <div className="p-6">
-                <div className="flex items-start justify-between mb-3">
-                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                    {collection.name}
-                  </h3>
-                  <div className="flex items-center">
-                    {collection.isPublic ? (
-                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
-                        Public
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200">
-                        Private
-                      </span>
+      {/* Collection Detail Overlay */}
+      {selectedCollection && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 overflow-y-auto">
+          <div className="min-h-screen bg-white dark:bg-black">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+              {/* Close button in top-right corner */}
+              <button
+                onClick={closeCollection}
+                className="fixed top-4 right-4 z-50 text-gray-900 dark:text-gray-100 hover:opacity-70 transition-opacity"
+                aria-label="Close"
+              >
+                <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+
+              {/* Collection Header */}
+              <div className="bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 p-6 mb-6">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <div className="flex items-center mb-2">
+                      <div className="w-3 h-3 bg-gray-600 dark:bg-gray-400 mr-3"></div>
+                      <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
+                        {selectedCollection.name}
+                      </h1>
+                    </div>
+                    {selectedCollection.description && (
+                      <p className="text-gray-600 dark:text-gray-400 mb-4">{selectedCollection.description}</p>
                     )}
-                  </div>
-                </div>
-                
-                <p className="text-gray-600 dark:text-gray-400 text-sm mb-4">
-                  {collection.description}
-                </p>
-                
-                <div className="flex flex-wrap gap-1 mb-4">
-                  {collection.tags.map((tag, index) => (
-                    <span key={index} className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
-                      {tag}
-                    </span>
-                  ))}
-                </div>
-                
-                <div className="flex items-center justify-between text-sm text-gray-500 dark:text-gray-400">
-                  <div className="flex items-center space-x-4">
-                    <span>{collection.documentCount} docs</span>
-                    <span>{collection.participants} participants</span>
-                  </div>
-                  <span>{collection.lastActivity}</span>
-                </div>
-                
-                <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
-                  <p className="text-xs text-gray-500 dark:text-gray-400">
-                    Created by {collection.creator}
-                  </p>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border">
-          <div className="divide-y divide-gray-200 dark:divide-gray-700">
-            {filteredCollections.map((collection) => (
-              <div key={collection.id} className="p-6 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer">
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <div className="flex items-center space-x-3 mb-2">
-                      <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                        {collection.name}
-                      </h3>
-                      {collection.isPublic ? (
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
-                          Public
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200">
-                          Private
-                        </span>
-                      )}
-                    </div>
-                    
-                    <p className="text-gray-600 dark:text-gray-400 text-sm mb-3">
-                      {collection.description}
-                    </p>
-                    
-                    <div className="flex items-center space-x-6 text-sm text-gray-500 dark:text-gray-400">
-                      <span>{collection.documentCount} documents</span>
-                      <span>{collection.participants} participants</span>
-                      <span>Created by {collection.creator}</span>
-                      <span>Last activity: {collection.lastActivity}</span>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-gray-500 dark:text-gray-400">
+                      <div>
+                        <p><strong>OrbitDB Address:</strong></p>
+                        <code className="text-xs bg-gray-100 dark:bg-gray-800 px-2 py-1 block mt-1 font-mono">
+                          {selectedCollection.orbitAddress}
+                        </code>
+                      </div>
+                      <div>
+                        <p><strong>Created by:</strong> <span className="text-gray-900 dark:text-white">{selectedCollection.username}</span></p>
+                        <p><strong>Peer ID:</strong> {selectedCollection.peerId.slice(0, 12)}...</p>
+                        <p><strong>Connected Peers:</strong> {selectedCollection.peers.length}</p>
+                        <p><strong>Created:</strong> {formatDate(selectedCollection.created)}</p>
+                        <p><strong>Last Sync:</strong> {formatDate(selectedCollection.lastSync)}</p>
+                      </div>
                     </div>
                   </div>
-                  
-                  <div className="ml-4">
-                    <button className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
-                      <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                        <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
-                      </svg>
+
+                  <div className="flex space-x-2">
+                    <button
+                      onClick={handleShare}
+                      className="px-4 py-2 bg-gray-900 dark:bg-gray-100 text-white dark:text-black hover:bg-gray-700 dark:hover:bg-gray-300"
+                    >
+                      Share
                     </button>
                   </div>
                 </div>
               </div>
-            ))}
+
+              {/* P2P Network Status */}
+              <div className="bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 p-4 mb-6">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center">
+                    <div className="h-3 w-3 mr-2 bg-gray-600 dark:bg-gray-400"></div>
+                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                      P2P Network: Connected
+                    </span>
+                  </div>
+                  <div className="flex items-center space-x-4 text-sm text-gray-500 dark:text-gray-400">
+                    <span>OrbitDB Active</span>
+                    <span>IPFS Gateway</span>
+                    <span>{selectedCollection.peers.length} Peers</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* P2P Documents */}
+              <div className="mb-6">
+                <P2PDocumentsApi collectionId={selectedCollection.id} />
+              </div>
+
+              {/* Pinned Documents */}
+              {userId && (
+                <div className="mb-6">
+                  <PinnedDocuments
+                    userId={userId}
+                    collectionId={selectedCollection.id}
+                    mode="p2p"
+                  />
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
 
-      {/* Empty State */}
-      {filteredCollections.length === 0 && (
-        <div className="text-center py-12">
-          <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-          </svg>
-          <h3 className="mt-2 text-sm font-medium text-gray-900 dark:text-white">No collections found</h3>
-          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-            No collections match your current filter.
-          </p>
+      {/* Create Collection Modal */}
+      {showCreateModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white dark:bg-black border border-gray-300 dark:border-gray-700 p-6 max-w-md w-full">
+            <h2 className="text-xl font-bold mb-4 text-gray-900 dark:text-white">
+              Create New P2P Collection
+            </h2>
+            <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+              This collection will be stored on OrbitDB and synchronized across P2P peers
+            </p>
+            <form onSubmit={(e) => {
+              e.preventDefault()
+              const formData = new FormData(e.currentTarget)
+              handleCreateCollection(
+                formData.get('name') as string,
+                formData.get('description') as string
+              )
+            }}>
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Name
+                </label>
+                <input
+                  name="name"
+                  type="text"
+                  required
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-white"
+                />
+              </div>
+              <div className="mb-6">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Description
+                </label>
+                <textarea
+                  name="description"
+                  rows={3}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-white"
+                />
+              </div>
+              <div className="flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowCreateModal(false)}
+                  className="px-4 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 border border-gray-300 dark:border-gray-700"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-gray-900 dark:bg-gray-100 text-white dark:text-black hover:bg-gray-700 dark:hover:bg-gray-300"
+                >
+                  Create
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
     </div>
+  )
+}
+
+export default function Collections() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-white dark:bg-black flex items-center justify-center">
+        <div className="animate-spin h-12 w-12 border-b-2 border-gray-900 dark:border-gray-100"></div>
+      </div>
+    }>
+      <CollectionsContent />
+    </Suspense>
   )
 }

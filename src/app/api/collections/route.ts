@@ -1,15 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { v4 as uuidv4 } from 'uuid'
+// uuid removed - using crypto.randomUUID()
 import { getDatabase } from '@/lib/database'
+import { createCollectionSchema, validateRequest } from '@/lib/validation'
 
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
-    const isPublic = searchParams.get('public')
     const userId = searchParams.get('userId')
 
     const db = getDatabase()
     
+    // All collections are public, optionally filter by user
     let query = `
       SELECT c.*, u.username as creator_username
       FROM collections c
@@ -17,10 +18,7 @@ export async function GET(request: NextRequest) {
     `
     const params: any[] = []
 
-    if (isPublic === 'true') {
-      query += ' WHERE c.is_public = ?'
-      params.push(1)
-    } else if (userId) {
+    if (userId) {
       query += ' WHERE c.created_by = ?'
       params.push(userId)
     }
@@ -42,11 +40,23 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const { name, description, isPublic, createdBy } = await request.json()
+    const body = await request.json()
 
-    if (!name || !createdBy) {
+    // Validate input
+    const validation = validateRequest(createCollectionSchema, body)
+    if (!validation.success) {
       return NextResponse.json(
-        { error: 'Name and creator ID are required' },
+        { error: validation.error },
+        { status: 400 }
+      )
+    }
+
+    const { name, description } = validation.data
+    const createdBy = body.createdBy // Auth will be handled separately
+
+    if (!createdBy) {
+      return NextResponse.json(
+        { error: 'Creator ID is required' },
         { status: 400 }
       )
     }
@@ -62,16 +72,24 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Create collection
-    const collectionId = uuidv4()
-    const shareableLink = isPublic ? uuidv4() : null
+    // Check if user already has a collection (limit 1 per user)
+    const existingCollection = db.prepare('SELECT id FROM collections WHERE created_by = ?').get(createdBy)
+    if (existingCollection) {
+      return NextResponse.json(
+        { error: 'You can only have one collection. Please manage your existing collection instead.' },
+        { status: 409 }
+      )
+    }
+
+    // Create collection (always public)
+    const collectionId = crypto.randomUUID()
 
     const insertCollection = db.prepare(`
-      INSERT INTO collections (id, name, description, is_public, shareable_link, created_by)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT INTO collections (id, name, description, created_by)
+      VALUES (?, ?, ?, ?)
     `)
 
-    insertCollection.run(collectionId, name, description, isPublic ? 1 : 0, shareableLink, createdBy)
+    insertCollection.run(collectionId, name, description, createdBy)
 
     // Log activity
     const logActivity = db.prepare(`
@@ -80,18 +98,17 @@ export async function POST(request: NextRequest) {
     `)
 
     logActivity.run(
-      uuidv4(),
+      crypto.randomUUID(),
       createdBy,
       'create_collection',
       'collection',
       collectionId,
-      JSON.stringify({ name, isPublic })
+      JSON.stringify({ name })
     )
 
     return NextResponse.json({
       message: 'Collection created successfully',
-      collectionId,
-      shareableLink
+      collectionId
     }, { status: 201 })
 
   } catch (error) {

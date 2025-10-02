@@ -1,130 +1,243 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 
-export default function Auth() {
-  const [isLogin, setIsLogin] = useState(true)
+export default function P2PAuth() {
+  const [mounted, setMounted] = useState(false)
+  const [username, setUsername] = useState('')
+  const [privateKey, setPrivateKey] = useState('')
+  const [isLoading, setIsLoading] = useState(false)
+  const [message, setMessage] = useState('')
+  const [messageType, setMessageType] = useState<'error' | 'success'>('success')
+  const [mode, setMode] = useState<'login' | 'register'>('login')
+  const router = useRouter()
+
+  const THEODORE_PRIVATE_KEY = 'LS0tLS1CRUdJTiBQUklWQVRFIEtFWS0tLS0tCk1DNENBUUF3QlFZREsyVndCQ0lFSUVic1l3K3dZSFdabzlqWjFvaGRiL1JwYnVEcHdMdjNnNGZKUjl3YmxmZHMKLS0tLS1FTkQgUFJJVkFURSBLRVktLS0tLQo='
+  const DUMMY_PRIVATE_KEY = 'LS0tLS1CRUdJTiBQUklWQVRFIEtFWS0tLS0tCk1DNENBUUF3QlFZREsyVndCQ0lFSU9qRmxmV0tQcVFvNHhCVFphOGlwVmFmd0JKQWl3cFpEbjRvOCtENi9VMzgKLS0tLS1FTkQgUFJJVkFURSBLRVktLS0tLQo='
+
+  useEffect(() => {
+    // Check if already authenticated
+    const token = localStorage.getItem('token');
+    if (token) {
+      router.push('/feed');
+      return;
+    }
+
+    // Force client-side rendering with a small delay
+    const timer = setTimeout(() => setMounted(true), 10)
+    return () => clearTimeout(timer)
+  }, [])
+
+  if (!mounted) {
+    return (
+      <div className="min-h-screen bg-white dark:bg-black flex items-center justify-center">
+        <div className="animate-spin h-8 w-8 border-b-2 border-gray-900 dark:border-gray-100"></div>
+      </div>
+    )
+  }
+
+  const showMessage = (text: string, isError = false) => {
+    setMessage(text)
+    setMessageType(isError ? 'error' : 'success')
+  }
+
+  const p2pAuth = async (endpoint: string, data: any) => {
+    try {
+      setIsLoading(true)
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      })
+
+      const result = await response.json()
+
+      if (response.ok) {
+        if (endpoint.includes('login')) {
+          localStorage.setItem('token', result.token)
+          localStorage.setItem('userId', result.identity.did)
+          localStorage.setItem('username', data.username || 'theodore')
+          localStorage.setItem('authMode', 'p2p')
+          localStorage.setItem('p2pPrivateKey', data.privateKey)
+          localStorage.setItem('p2pPublicKey', result.identity.did)
+
+          showMessage('P2P login successful! Redirecting...')
+          setTimeout(() => router.push('/feed'), 1000)
+        } else {
+          showMessage(`P2P identity created! DID: ${result.identity.did.slice(0, 20)}...`)
+          setUsername('')
+          setPrivateKey('')
+        }
+      } else {
+        showMessage(result.error || 'Authentication failed', true)
+      }
+    } catch (error: any) {
+      showMessage('Network error: ' + error.message, true)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleTheodore = () => {
+    setUsername('theodore')
+    setPrivateKey(THEODORE_PRIVATE_KEY)
+    p2pAuth('/api/auth/p2p/login', {
+      username: 'theodore',
+      privateKey: THEODORE_PRIVATE_KEY
+    })
+  }
+
+  const handleDummy = () => {
+    setUsername('dummy')
+    setPrivateKey(DUMMY_PRIVATE_KEY)
+    p2pAuth('/api/auth/p2p/login', {
+      username: 'dummy',
+      privateKey: DUMMY_PRIVATE_KEY
+    })
+  }
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+
+    if (mode === 'login' && (!username || !privateKey)) {
+      showMessage('Please enter username and private key', true)
+      return
+    }
+
+    if (mode === 'register' && !username) {
+      showMessage('Please enter a username', true)
+      return
+    }
+
+    const endpoint = mode === 'login' ? '/api/auth/p2p/login' : '/api/auth/p2p/register'
+    p2pAuth(endpoint, { username, privateKey })
+  }
 
   return (
-    <div className="min-h-screen flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-white dark:bg-black flex items-center justify-center py-12 px-4">
       <div className="max-w-md w-full space-y-8">
-        <div>
-          <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900 dark:text-white">
-            {isLogin ? 'Sign in to your account' : 'Create new account'}
+        <div className="text-center">
+          <h2 className="text-3xl font-bold text-gray-900 dark:text-white">
+            P2P Authentication
           </h2>
-          <p className="mt-2 text-center text-sm text-gray-600 dark:text-gray-400">
-            {isLogin ? "Don't have an account? " : "Already have an account? "}
-            <button
-              onClick={() => setIsLogin(!isLogin)}
-              className="font-medium text-blue-600 hover:text-blue-500 dark:text-blue-400"
-            >
-              {isLogin ? 'Register here' : 'Sign in'}
-            </button>
+          <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
+            Decentralized identity system
           </p>
         </div>
-        
-        <form className="mt-8 space-y-6" onSubmit={(e) => e.preventDefault()}>
-          <div className="space-y-4">
-            {!isLogin && (
-              <div>
-                <label htmlFor="username" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                  Username
-                </label>
-                <input
-                  id="username"
-                  name="username"
-                  type="text"
-                  className="mt-1 block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
-                  placeholder="Enter your username"
-                />
-              </div>
-            )}
-            
-            <div>
-              <label htmlFor="email" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                Email address
-              </label>
-              <input
-                id="email"
-                name="email"
-                type="email"
-                className="mt-1 block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
-                placeholder="Enter your email"
-              />
-            </div>
 
-            <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                Password
-              </label>
-              <input
-                id="password"
-                name="password"
-                type="password"
-                className="mt-1 block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
-                placeholder="Enter your password"
-              />
+        {/* Quick Test Logins */}
+        <div className="bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 p-4">
+          <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-3">Quick Test Logins</h3>
+          <div className="space-y-2">
+            <div className="flex justify-between items-center">
+              <div>
+                <p className="text-xs text-gray-600 dark:text-gray-400">
+                  Login as Theodore
+                </p>
+              </div>
+              <button
+                onClick={handleTheodore}
+                disabled={isLoading}
+                className="px-4 py-2 bg-gray-900 dark:bg-gray-100 text-white dark:text-black text-sm hover:bg-gray-700 dark:hover:bg-gray-300 disabled:opacity-50"
+              >
+                Theodore
+              </button>
+            </div>
+            <div className="flex justify-between items-center">
+              <div>
+                <p className="text-xs text-gray-600 dark:text-gray-400">
+                  Login as Dummy (test account)
+                </p>
+              </div>
+              <button
+                onClick={handleDummy}
+                disabled={isLoading}
+                className="px-4 py-2 bg-gray-700 dark:bg-gray-300 text-white dark:text-black text-sm hover:bg-gray-600 dark:hover:bg-gray-400 disabled:opacity-50"
+              >
+                Dummy
+              </button>
             </div>
           </div>
+        </div>
 
-          {!isLogin && (
-            <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-md p-4">
-              <div className="flex">
-                <div className="flex-shrink-0">
-                  <svg className="h-5 w-5 text-yellow-400" viewBox="0 0 20 20" fill="currentColor">
-                    <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                  </svg>
-                </div>
-                <div className="ml-3">
-                  <p className="text-sm text-yellow-700 dark:text-yellow-300">
-                    Account registration requires admin approval. You'll receive an email when approved.
-                  </p>
-                </div>
-              </div>
-            </div>
-          )}
+        {/* Mode Toggle */}
+        <div className="flex justify-center">
+          <div className="flex bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 p-1">
+            <button
+              onClick={() => setMode('login')}
+              className={`px-4 py-2 text-sm ${
+                mode === 'login'
+                  ? 'bg-gray-900 dark:bg-gray-100 text-white dark:text-black'
+                  : 'text-gray-600 dark:text-gray-300'
+              }`}
+            >
+              Login
+            </button>
+            <button
+              onClick={() => setMode('register')}
+              className={`px-4 py-2 text-sm ${
+                mode === 'register'
+                  ? 'bg-gray-900 dark:bg-gray-100 text-white dark:text-black'
+                  : 'text-gray-600 dark:text-gray-300'
+              }`}
+            >
+              Register
+            </button>
+          </div>
+        </div>
+
+        {/* Form */}
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+              Username
+            </label>
+            <input
+              type="text"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              className="mt-1 block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+              placeholder="Enter username"
+            />
+          </div>
 
           <div>
-            <button
-              type="submit"
-              className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
-            >
-              {isLogin ? 'Sign in' : 'Request Access'}
-            </button>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+              Private Key {mode === 'register' && '(optional)'}
+            </label>
+            <input
+              type="password"
+              value={privateKey}
+              onChange={(e) => setPrivateKey(e.target.value)}
+              className="mt-1 block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+              placeholder={mode === 'login' ? 'Your P2P private key' : 'Leave empty to auto-generate'}
+            />
           </div>
 
-          {isLogin && (
-            <div className="text-center">
-              <a href="#" className="text-sm text-blue-600 hover:text-blue-500 dark:text-blue-400">
-                Forgot your password?
-              </a>
+          {/* Message */}
+          {message && (
+            <div className={`p-3 border ${
+              messageType === 'error'
+                ? 'bg-white dark:bg-gray-900 border-gray-900 dark:border-gray-100 text-gray-900 dark:text-gray-100'
+                : 'bg-white dark:bg-gray-900 border-gray-300 dark:border-gray-700 text-gray-900 dark:text-gray-100'
+            }`}>
+              <p className="text-sm">{message}</p>
             </div>
           )}
+
+          <button
+            type="submit"
+            disabled={isLoading}
+            className="w-full py-2 px-4 bg-gray-900 dark:bg-gray-100 hover:bg-gray-700 dark:hover:bg-gray-300 text-white dark:text-black disabled:opacity-50"
+          >
+            {isLoading ? 'Loading...' : mode === 'login' ? 'P2P Login' : 'Create P2P Identity'}
+          </button>
         </form>
 
-        <div className="mt-6">
-          <div className="relative">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-gray-300 dark:border-gray-600" />
-            </div>
-            <div className="relative flex justify-center text-sm">
-              <span className="px-2 bg-gray-50 dark:bg-gray-900 text-gray-500 dark:text-gray-400">Demo Mode</span>
-            </div>
-          </div>
-          
-          <div className="mt-6 space-y-3">
-            <button
-              onClick={() => alert('Demo login as regular user - would redirect to dashboard')}
-              className="w-full flex justify-center py-2 px-4 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700"
-            >
-              Demo: Regular User
-            </button>
-            <button
-              onClick={() => alert('Demo login as admin - would redirect to admin dashboard')}
-              className="w-full flex justify-center py-2 px-4 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700"
-            >
-              Demo: Admin User
-            </button>
-          </div>
+        <div className="text-center">
+          <p className="text-sm text-gray-600 dark:text-gray-400">
+            P2P authentication - No approval needed
+          </p>
         </div>
       </div>
     </div>

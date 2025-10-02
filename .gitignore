@@ -2,6 +2,7 @@
 
 # dependencies
 /node_modules
+/orbitdb-service/node_modules
 /.pnp
 .pnp.*
 .yarn/*
@@ -39,3 +40,18 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Database and data files
+*.db
+*.db-shm
+*.db-wal
+/uploads
+/data
+
+# Docker volumes data
+/orbitdb-service/data
+/orbitdb-service/test-data
+
+# Lock files (keep package-lock.json for reproducible builds)
+package-lock.json
+orbitdb-service/package-lock.json

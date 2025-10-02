@@ -1,0 +1,22 @@
+{
+  "name": "orbitdb-service",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "@chainsafe/libp2p-gossipsub": "14.1.0",
+    "@chainsafe/libp2p-noise": "16.0.0",
+    "@chainsafe/libp2p-yamux": "7.0.0",
+    "@libp2p/identify": "3.0.0",
+    "@libp2p/websockets": "9.0.0",
+    "@libp2p/webrtc": "5.0.0",
+    "@multiformats/multiaddr": "12.3.1",
+    "@orbitdb/core": "2.4.0",
+    "cors": "2.8.5",
+    "express": "4.21.1",
+    "helia": "5.0.1",
+    "libp2p": "2.2.1"
+  }
+}

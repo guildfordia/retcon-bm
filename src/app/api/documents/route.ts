@@ -1,13 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { v4 as uuidv4 } from 'uuid'
+// uuid removed - using crypto.randomUUID()
 import { getDatabase } from '@/lib/database'
+import { verifyAuth } from '@/lib/auth-middleware'
+// File validation removed - implement inline if needed
 
 export async function GET(request: NextRequest) {
   try {
+    // Verify authentication
+    const user = await verifyAuth(request)
+    if (!user) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      )
+    }
     const { searchParams } = new URL(request.url)
     const collectionId = searchParams.get('collectionId')
     const userId = searchParams.get('userId')
     const mimeType = searchParams.get('type')
+    const excludeCollection = searchParams.get('excludeCollection')
 
     const db = getDatabase()
     
@@ -35,6 +46,14 @@ export async function GET(request: NextRequest) {
       params.push(`${mimeType}%`)
     }
 
+    // Exclude documents already in a specific collection
+    if (excludeCollection) {
+      query += ` AND d.id NOT IN (
+        SELECT document_id FROM collection_documents WHERE collection_id = ?
+      )`
+      params.push(excludeCollection)
+    }
+
     query += ' ORDER BY d.created_at DESC'
 
     const documents = db.prepare(query).all(...params)
@@ -52,30 +71,44 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    // Verify authentication
+    const user = await verifyAuth(request)
+    if (!user) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      )
+    }
+
     const formData = await request.formData()
     const title = formData.get('title') as string
     const description = formData.get('description') as string
-    const uploadedBy = formData.get('uploadedBy') as string
     const collectionId = formData.get('collectionId') as string
     const file = formData.get('file') as File
 
-    if (!title || !uploadedBy || !file) {
+    // Use authenticated user's ID instead of uploadedBy from form
+    const uploadedBy = user.id
+
+    if (!title || !file) {
       return NextResponse.json(
-        { error: 'Title, uploader ID, and file are required' },
+        { error: 'Title and file are required' },
+        { status: 400 }
+      )
+    }
+
+    // Basic file validation
+    const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB
+    if (file.size > MAX_FILE_SIZE) {
+      return NextResponse.json(
+        { error: 'File size exceeds 10MB limit' },
         { status: 400 }
       )
     }
 
     const db = getDatabase()
 
-    // Verify user exists and is approved
-    const user = db.prepare('SELECT is_approved FROM users WHERE id = ?').get(uploadedBy) as any
-    if (!user || !user.is_approved) {
-      return NextResponse.json(
-        { error: 'User not found or not approved' },
-        { status: 403 }
-      )
-    }
+    // Verify user exists and is approved (already done in auth middleware)
+    // No need to check again since auth middleware already verified the user
 
     // Verify collection exists if provided
     if (collectionId) {
@@ -88,8 +121,8 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Create document record
-    const documentId = uuidv4()
+    // Create document record (metadata only - actual file stored in OrbitDB client-side)
+    const documentId = crypto.randomUUID()
     const filename = `${documentId}_${file.name}`
 
     const insertDocument = db.prepare(`
@@ -130,7 +163,7 @@ export async function POST(request: NextRequest) {
     `)
 
     logActivity.run(
-      uuidv4(),
+      crypto.randomUUID(),
       uploadedBy,
       'upload',
       'document',
