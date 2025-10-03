@@ -69,7 +69,13 @@ export async function POST(request: NextRequest) {
       ...currentDocument,
       metadata: updatedMetadata,
       version: newVersion, // Increment to the NEW version
-      lastAccessed: Date.now()
+      lastAccessed: Date.now(),
+      // If new IPFS CID is provided (for images), update it at document level
+      ...(updatedMetadata.ipfsCID && {
+        ipfsCID: updatedMetadata.ipfsCID,
+        contentType: updatedMetadata.contentType,
+        contentSize: updatedMetadata.contentSize
+      })
     }
 
     // Since OrbitDB doesn't support in-place updates, we need to:

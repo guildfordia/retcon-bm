@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { orbitdbClient } from '@/lib/orbitdb-client'
+import { userCollectionRegistry } from '@/lib/user-collection-registry'
 import { randomBytes } from 'crypto'
 
 // Fork P2P Document - Create a new document based on the original
@@ -74,6 +75,9 @@ export async function POST(request: NextRequest) {
 
     // Add the forked document to the user's collection
     await orbitdbClient.addDocumentToCollection(userCollectionStoreName, forkedDocument)
+
+    // Register the user's collection in the global registry so it appears in the feed
+    await userCollectionRegistry.addUserCollection(peerId, userCollectionStoreName)
 
     // Update the original document to add this fork as a child
     const updatedOriginalDocument = {
