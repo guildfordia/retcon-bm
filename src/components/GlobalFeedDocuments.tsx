@@ -74,9 +74,12 @@ export default function GlobalFeedDocuments({ filters }: GlobalFeedDocumentsProp
         return ipfsContent[documentId]
       }
 
+      // Use relative URL to go through nginx proxy
+      const baseUrl = '/orbitdb'
+
       // For images, get base64
       if (contentType?.startsWith('image/')) {
-        const response = await fetch(`http://localhost:4001/ipfs/retrieve-base64/${cid}?contentType=${encodeURIComponent(contentType)}`)
+        const response = await fetch(`${baseUrl}/ipfs/retrieve-base64/${cid}?contentType=${encodeURIComponent(contentType)}`)
         if (!response.ok) throw new Error('Failed to fetch image from IPFS')
         const data = await response.json()
         const dataUrl = `data:${contentType};base64,${data.base64}`
@@ -86,7 +89,7 @@ export default function GlobalFeedDocuments({ filters }: GlobalFeedDocumentsProp
         return dataUrl
       } else {
         // For text (quotes/links), get plain text
-        const response = await fetch(`http://localhost:4001/ipfs/retrieve/${cid}?contentType=text/plain`)
+        const response = await fetch(`${baseUrl}/ipfs/retrieve/${cid}?contentType=text/plain`)
         if (!response.ok) throw new Error('Failed to fetch text from IPFS')
         const text = await response.text()
 
