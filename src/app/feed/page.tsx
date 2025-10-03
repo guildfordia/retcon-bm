@@ -92,19 +92,11 @@ export default function FeedPage() {
                 Latest documents from all users and collections
               </p>
             </div>
-            <div className="flex items-center gap-4">
-              <button
-                onClick={() => window.location.href = '/collections/my'}
-                className="px-4 py-2 border border-gray-900 dark:border-gray-100 text-gray-900 dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-800"
-              >
-                My Collection
-              </button>
-              <div className="flex items-center gap-2">
-                <div className="w-2 h-2 bg-green-600 dark:bg-green-400 rounded-full" />
-                <span className="text-sm text-gray-600 dark:text-gray-400">
-                  OrbitDB Connected
-                </span>
-              </div>
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 bg-green-600 dark:bg-green-400 rounded-full" />
+              <span className="text-sm text-gray-600 dark:text-gray-400">
+                OrbitDB Connected
+              </span>
             </div>
           </div>
         </div>

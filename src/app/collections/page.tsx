@@ -372,8 +372,8 @@ function CollectionsContent() {
                 <P2PDocumentsApi collectionId={selectedCollection.id} />
               </div>
 
-              {/* Pinned Documents */}
-              {userId && (
+              {/* Pinned Documents - Hidden */}
+              {/* {userId && (
                 <div className="mb-6">
                   <PinnedDocuments
                     userId={userId}
@@ -381,7 +381,7 @@ function CollectionsContent() {
                     mode="p2p"
                   />
                 </div>
-              )}
+              )} */}
             </div>
           </div>
         </div>

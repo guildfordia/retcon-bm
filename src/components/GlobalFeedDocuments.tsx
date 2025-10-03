@@ -543,15 +543,6 @@ export default function GlobalFeedDocuments({ filters }: GlobalFeedDocumentsProp
                   <button
                     onClick={(e) => {
                       e.stopPropagation()
-                      handleAddToCollection(selectedDocument)
-                    }}
-                    className="px-4 py-2 border border-gray-900 dark:border-gray-100 text-gray-900 dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-800 text-sm"
-                  >
-                    Add to Collection
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation()
                       handleForkDocument(selectedDocument)
                     }}
                     className="px-4 py-2 border border-gray-900 dark:border-gray-100 text-gray-900 dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-800 text-sm"
