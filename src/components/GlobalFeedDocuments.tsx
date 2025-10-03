@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import DocumentEditModal from './DocumentEditModal'
 import DocumentVersionBrowser from './DocumentVersionBrowser'
+import ForkTreeView from './ForkTreeView'
 
 interface P2PDocument {
   id: string
@@ -30,6 +31,12 @@ interface P2PDocument {
     changeComment: string
     previousMetadata: any
   }>
+  // Fork relationships
+  parentDocumentId?: string // ID of the document this was forked from
+  childDocumentIds?: string[] // IDs of documents forked from this one
+  // Collection metadata
+  addedBy?: string // User who added this to their collection
+  collectionFrom?: string[] // Array of collection IDs this document appears in
 }
 
 interface FeedItem {
@@ -58,6 +65,7 @@ export default function GlobalFeedDocuments({ filters }: GlobalFeedDocumentsProp
   const [selectedDocument, setSelectedDocument] = useState<FeedItem | null>(null)
   const [editingDocument, setEditingDocument] = useState<FeedItem | null>(null)
   const [viewingHistory, setViewingHistory] = useState<FeedItem | null>(null)
+  const [viewingForkTree, setViewingForkTree] = useState<FeedItem | null>(null)
 
   // IPFS content cache: documentId -> content (base64 for images, text for quotes/links)
   const [ipfsContent, setIpfsContent] = useState<Record<string, string>>({})
@@ -220,6 +228,89 @@ export default function GlobalFeedDocuments({ filters }: GlobalFeedDocumentsProp
   const handleEditDocument = (item: FeedItem, e: React.MouseEvent) => {
     e.stopPropagation()
     setEditingDocument(item)
+  }
+
+  const handleForkDocument = async (item: FeedItem) => {
+    const userId = localStorage.getItem('userId')
+    if (!userId) {
+      alert('You must be logged in to fork a document')
+      return
+    }
+
+    try {
+      // Call the fork API endpoint
+      const response = await fetch('/api/documents/p2p/fork', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          originalDocumentId: item.document.id,
+          originalCollectionId: item.collectionId,
+          peerId: userId
+        })
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Failed to fork document')
+      }
+
+      const result = await response.json()
+
+      // Close the detail modal
+      setSelectedDocument(null)
+
+      // Create a FeedItem for the forked document to edit
+      const forkedItem: FeedItem = {
+        document: result.forkedDocument,
+        collectionName: result.collectionName,
+        collectionId: result.collectionId,
+        ownerUsername: result.ownerUsername,
+        ownerDid: userId
+      }
+
+      // Open edit modal with the forked document
+      setEditingDocument(forkedItem)
+
+    } catch (error) {
+      console.error('Error forking document:', error)
+      alert(error instanceof Error ? error.message : 'Failed to fork document')
+    }
+  }
+
+  const handleAddToCollection = async (item: FeedItem) => {
+    const userId = localStorage.getItem('userId')
+    if (!userId) {
+      alert('You must be logged in to add to your collection')
+      return
+    }
+
+    try {
+      const response = await fetch('/api/documents/p2p/collection/add', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          originalDocumentId: item.document.id,
+          originalCollectionId: item.collectionId,
+          peerId: userId
+        })
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Failed to add document to collection')
+      }
+
+      alert('Document added to your collection!')
+      setSelectedDocument(null)
+
+    } catch (error) {
+      console.error('Error adding to collection:', error)
+      alert(error instanceof Error ? error.message : 'Failed to add document to collection')
+    }
   }
 
   const handleSaveEdit = async (updatedMetadata: any, changeComment: string) => {
@@ -437,6 +528,36 @@ export default function GlobalFeedDocuments({ filters }: GlobalFeedDocumentsProp
                       View History
                     </button>
                   )}
+                  {(selectedDocument.document.parentDocumentId || (selectedDocument.document.childDocumentIds && selectedDocument.document.childDocumentIds.length > 0)) && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setViewingForkTree(selectedDocument)
+                        setSelectedDocument(null)
+                      }}
+                      className="px-4 py-2 border border-gray-900 dark:border-gray-100 text-gray-900 dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-800 text-sm"
+                    >
+                      View Fork Tree
+                    </button>
+                  )}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      handleAddToCollection(selectedDocument)
+                    }}
+                    className="px-4 py-2 border border-gray-900 dark:border-gray-100 text-gray-900 dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-800 text-sm"
+                  >
+                    Add to Collection
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      handleForkDocument(selectedDocument)
+                    }}
+                    className="px-4 py-2 border border-gray-900 dark:border-gray-100 text-gray-900 dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-800 text-sm"
+                  >
+                    Fork
+                  </button>
                   <button
                     onClick={(e) => {
                       handleEditDocument(selectedDocument, e)
@@ -708,6 +829,19 @@ export default function GlobalFeedDocuments({ filters }: GlobalFeedDocumentsProp
         <DocumentVersionBrowser
           document={viewingHistory.document}
           onClose={() => setViewingHistory(null)}
+        />
+      )}
+
+      {/* Fork Tree View */}
+      {viewingForkTree && (
+        <ForkTreeView
+          documentId={viewingForkTree.document.id}
+          collectionId={viewingForkTree.collectionId}
+          onClose={() => setViewingForkTree(null)}
+          onNodeClick={(docId) => {
+            // Optionally navigate to the clicked document
+            console.log('Clicked document:', docId)
+          }}
         />
       )}
     </>

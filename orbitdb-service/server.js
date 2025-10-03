@@ -277,6 +277,30 @@ app.get('/kv/all', async (req, res) => {
   }
 })
 
+// Delete entry from KV store
+app.post('/kv/delete', async (req, res) => {
+  try {
+    const { name, key } = req.body
+    if (!name || !key) {
+      return res.status(400).json({ error: 'Store name and key required' })
+    }
+
+    const db = databases.get(name)
+    if (!db) {
+      return res.status(404).json({ error: 'Store not found. Open it first.' })
+    }
+
+    // Delete by setting to null (OrbitDB del method)
+    await db.del(key)
+    console.log(`Deleted ${key} from ${name}`)
+
+    res.json({ success: true, key })
+  } catch (error) {
+    console.error('Error deleting from KV store:', error)
+    res.status(500).json({ error: error.message })
+  }
+})
+
 // Grant write access to another peer
 app.post('/kv/grant', async (req, res) => {
   try {

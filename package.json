@@ -20,6 +20,7 @@
     "@orbitdb/core": "^3.0.2",
     "@types/bcryptjs": "^2.4.6",
     "@types/jsonwebtoken": "^9.0.3",
+    "@xyflow/react": "^12.8.6",
     "assert": "^2.1.0",
     "autoprefixer": "^10.4.20",
     "bcryptjs": "^3.0.2",
