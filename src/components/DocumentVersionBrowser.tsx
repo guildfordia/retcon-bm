@@ -30,20 +30,42 @@ export default function DocumentVersionBrowser({ document, onClose }: DocumentVe
   // Get current metadata
   const currentMetadata = document.metadata || {}
 
-  // Build full version list including current
+  // Build full version list
+  // versionHistory contains entries for each version (v1, v2, v3, etc.)
+  // Each entry describes THAT version and includes previousMetadata (what it was before)
+  const currentVersion = document.version || 1
+  const currentVersionEntry = (document.versionHistory || []).find(v => v.version === currentVersion)
+
+  // Debug logging
+  console.log('DocumentVersionBrowser - currentVersion:', currentVersion)
+  console.log('DocumentVersionBrowser - versionHistory:', document.versionHistory)
+  console.log('DocumentVersionBrowser - currentVersionEntry:', currentVersionEntry)
+
   const allVersions = [
+    // Current version - use info from versionHistory
     {
-      version: document.version || 1,
-      editedBy: 'Current',
-      editedAt: Date.now(),
-      changeComment: 'Current version',
+      version: currentVersion,
+      editedBy: currentVersionEntry?.editedBy || 'Original',
+      editedAt: currentVersionEntry?.editedAt || Date.now(),
+      changeComment: currentVersionEntry?.changeComment || 'Initial version',
       metadata: currentMetadata
     },
-    ...(document.versionHistory || []).map(v => ({
-      ...v,
-      metadata: v.previousMetadata
-    }))
+    // Previous versions - each versionHistory entry contains previousMetadata
+    // Entry with version N contains the metadata from version N-1
+    ...(document.versionHistory || [])
+      .filter(v => v.previousMetadata) // Only show if we have the previous metadata
+      .map(v => ({
+        version: v.version - 1, // The previous version number
+        editedBy: 'System',
+        editedAt: v.editedAt, // When it was replaced
+        changeComment: `Replaced by version ${v.version}`,
+        metadata: v.previousMetadata
+      }))
+      // Remove duplicates by version (keep the first occurrence)
+      .filter((v, i, arr) => arr.findIndex(x => x.version === v.version) === i)
   ].sort((a, b) => b.version - a.version)
+
+  console.log('DocumentVersionBrowser - allVersions:', allVersions)
 
   const displayedMetadata = selectedVersion !== null
     ? allVersions.find(v => v.version === selectedVersion)?.metadata

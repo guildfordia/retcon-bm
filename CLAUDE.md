@@ -72,7 +72,17 @@ make up
 
 Remember: This is a **Docker-first application**. All development, testing, and production happens in containers.
 
-## 📚 Document Types
+## 📚 Collections & Documents
+
+### Collections Architecture
+- **P2P-Only**: All collections are P2P collections stored in OrbitDB
+- **One Collection Per User**: Each user has exactly one collection
+- **No Manual Creation**: Users cannot create new collections
+- **Auto-Naming**: Collections are automatically named `{username}'s collection` (e.g., "theodore's collection", "dummy's collection")
+- **No Renaming**: Collection names cannot be changed by users
+- **No Descriptions**: Collections do not have descriptions
+
+### Document Types
 
 The application supports three types of documents:
 

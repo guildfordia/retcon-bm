@@ -96,7 +96,7 @@ export default function GlobalFeed({ collectionSystem, currentUserPubKey }: Glob
         selectedCollection.ownerPubKey,
         selectedCollection.dbAddress
       )
-      alert(`Successfully forked document: ${forkedDoc.title}`)
+      // Fork successful - no alert needed
     } catch (err) {
       console.error('Error forking document:', err)
       alert(`Failed to fork document: ${err instanceof Error ? err.message : 'Unknown error'}`)

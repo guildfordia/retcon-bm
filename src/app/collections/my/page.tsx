@@ -145,7 +145,6 @@ export default function MyCollection() {
                 {/* Document content based on type */}
                 {doc.documentType === 'quote' && (
                   <div>
-                    <div className="text-4xl mb-3">📝</div>
                     <blockquote className="italic text-gray-700 dark:text-gray-300 mb-3 line-clamp-3">
                       "{doc.metadata?.quoteContent}"
                     </blockquote>
@@ -160,7 +159,6 @@ export default function MyCollection() {
 
                 {doc.documentType === 'link' && (
                   <div>
-                    <div className="text-4xl mb-3">🔗</div>
                     <h3 className="font-semibold text-gray-900 dark:text-white mb-2 line-clamp-2">
                       {doc.title}
                     </h3>
@@ -177,7 +175,6 @@ export default function MyCollection() {
 
                 {doc.documentType === 'image' && (
                   <div>
-                    <div className="text-4xl mb-3">🖼️</div>
                     <h3 className="font-semibold text-gray-900 dark:text-white mb-1 line-clamp-1">
                       {doc.title}
                     </h3>

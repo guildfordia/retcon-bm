@@ -383,7 +383,6 @@ export default function P2PDocumentsApi({ collectionId }: P2PDocumentsApiProps) 
               {/* Quote */}
               {doc.documentType === 'quote' && (
                 <div>
-                  <div className="text-4xl mb-3">📝</div>
                   <blockquote className="text-gray-700 dark:text-gray-300 italic mb-3 line-clamp-3">
                     "{doc.metadata?.quoteContent}"
                   </blockquote>
@@ -395,7 +394,6 @@ export default function P2PDocumentsApi({ collectionId }: P2PDocumentsApiProps) 
               {/* Link */}
               {doc.documentType === 'link' && (
                 <div>
-                  <div className="text-4xl mb-3">🔗</div>
                   <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2 line-clamp-2">
                     {doc.title}
                   </h3>
@@ -413,7 +411,6 @@ export default function P2PDocumentsApi({ collectionId }: P2PDocumentsApiProps) 
               {/* Image */}
               {doc.documentType === 'image' && (
                 <div>
-                  <div className="text-4xl mb-3">🖼️</div>
                   <div className="bg-gray-100 dark:bg-gray-800 h-40 flex items-center justify-center mb-3">
                     <span className="text-gray-400">Image Preview</span>
                   </div>
@@ -450,7 +447,6 @@ export default function P2PDocumentsApi({ collectionId }: P2PDocumentsApiProps) 
                     }}
                     className="p-6 border-2 border-gray-300 dark:border-gray-600 hover:border-gray-900 dark:hover:border-gray-100 transition-colors text-center"
                   >
-                    <div className="text-4xl mb-2">📝</div>
                     <h4 className="font-semibold text-gray-900 dark:text-white mb-1">Quote</h4>
                     <p className="text-sm text-gray-600 dark:text-gray-400">Text excerpt from books with bibliographic info</p>
                   </button>
@@ -462,7 +458,6 @@ export default function P2PDocumentsApi({ collectionId }: P2PDocumentsApiProps) 
                     }}
                     className="p-6 border-2 border-gray-300 dark:border-gray-600 hover:border-gray-900 dark:hover:border-gray-100 transition-colors text-center"
                   >
-                    <div className="text-4xl mb-2">🔗</div>
                     <h4 className="font-semibold text-gray-900 dark:text-white mb-1">Link URL</h4>
                     <p className="text-sm text-gray-600 dark:text-gray-400">Web link with comprehensive metadata</p>
                   </button>
@@ -474,7 +469,6 @@ export default function P2PDocumentsApi({ collectionId }: P2PDocumentsApiProps) 
                     }}
                     className="p-6 border-2 border-gray-300 dark:border-gray-600 hover:border-gray-900 dark:hover:border-gray-100 transition-colors text-center"
                   >
-                    <div className="text-4xl mb-2">🖼️</div>
                     <h4 className="font-semibold text-gray-900 dark:text-white mb-1">Image</h4>
                     <p className="text-sm text-gray-600 dark:text-gray-400">Visual document with descriptive metadata (max 1MB)</p>
                   </button>

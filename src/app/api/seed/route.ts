@@ -90,8 +90,8 @@ export async function POST() {
     // Create dummy's collection
     const dummyCollection = await orbitdbClient.createCollection(
       userMap.dummy.did,
-      'My Reading Collection',
-      'Personal quotes and references from my favorite books'
+      "dummy's collection", // Auto-naming: username's collection
+      '' // No description
     )
     userCollectionRegistry.addUserCollection(userMap.dummy.did, dummyCollection.storeName)
     console.log(`  ✓ Created P2P collection for dummy: '${dummyCollection.name}'`)
@@ -294,8 +294,8 @@ export async function POST() {
     // Create theodore's collection
     const theodoreCollection = await orbitdbClient.createCollection(
       userMap.theodore.did,
-      'Research Archive',
-      'Technical resources, citations, and research materials'
+      "theodore's collection", // Auto-naming: username's collection
+      '' // No description
     )
     userCollectionRegistry.addUserCollection(userMap.theodore.did, theodoreCollection.storeName)
     console.log(`\n  ✓ Created P2P collection for theodore: '${theodoreCollection.name}'`)

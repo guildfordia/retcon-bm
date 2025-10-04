@@ -1,17 +1,6 @@
 'use client'
-import { useCallback, useEffect, useState } from 'react'
-import {
-  ReactFlow,
-  Node,
-  Edge,
-  Background,
-  Controls,
-  MiniMap,
-  useNodesState,
-  useEdgesState,
-  Position,
-} from '@xyflow/react'
-import '@xyflow/react/dist/style.css'
+import { useEffect, useState } from 'react'
+import Tree from 'react-d3-tree'
 
 interface P2PDocument {
   id: string
@@ -22,6 +11,18 @@ interface P2PDocument {
   created: number
   parentDocumentId?: string
   childDocumentIds?: string[]
+}
+
+interface TreeNode {
+  name: string
+  attributes?: {
+    id: string
+    version: number
+    uploadedBy: string
+    documentType: string
+    isCurrent: boolean
+  }
+  children?: TreeNode[]
 }
 
 interface ForkTreeViewProps {
@@ -37,10 +38,10 @@ export default function ForkTreeView({
   onClose,
   onNodeClick
 }: ForkTreeViewProps) {
-  const [nodes, setNodes, onNodesChange] = useNodesState([])
-  const [edges, setEdges, onEdgesChange] = useEdgesState([])
+  const [treeData, setTreeData] = useState<TreeNode | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [translate, setTranslate] = useState({ x: 0, y: 0 })
 
   // Fetch fork tree data
   useEffect(() => {
@@ -60,10 +61,8 @@ export default function ForkTreeView({
         const { documents, rootId } = data
 
         // Build the tree structure
-        const { nodes: treeNodes, edges: treeEdges } = buildTree(documents, rootId)
-
-        setNodes(treeNodes)
-        setEdges(treeEdges)
+        const tree = buildTree(documents, rootId)
+        setTreeData(tree)
       } catch (err) {
         console.error('Error fetching fork tree:', err)
         setError(err instanceof Error ? err.message : 'Failed to load fork tree')
@@ -75,93 +74,137 @@ export default function ForkTreeView({
     fetchForkTree()
   }, [documentId, collectionId])
 
-  const buildTree = (documents: Record<string, P2PDocument>, rootId: string) => {
-    const nodes: Node[] = []
-    const edges: Edge[] = []
-    const levelMap = new Map<string, number>()
-    const positionMap = new Map<number, number>()
-
-    // Calculate levels (depth in tree)
-    const calculateLevel = (docId: string, level: number = 0) => {
-      levelMap.set(docId, level)
-      const doc = documents[docId]
-      if (doc?.childDocumentIds) {
-        doc.childDocumentIds.forEach(childId => {
-          if (documents[childId]) {
-            calculateLevel(childId, level + 1)
-          }
-        })
+  // Set initial translate position to center the tree
+  useEffect(() => {
+    const updateTranslate = () => {
+      const container = document.querySelector('.tree-container')
+      if (container) {
+        const width = container.clientWidth
+        const height = container.clientHeight
+        setTranslate({ x: width / 2, y: height / 6 })
       }
     }
 
-    calculateLevel(rootId)
+    updateTranslate()
+    window.addEventListener('resize', updateTranslate)
+    return () => window.removeEventListener('resize', updateTranslate)
+  }, [])
 
-    // Build nodes and edges
-    const processDocument = (docId: string) => {
+  const buildTree = (documents: Record<string, P2PDocument>, rootId: string): TreeNode => {
+    const buildNode = (docId: string): TreeNode => {
       const doc = documents[docId]
-      if (!doc) return
-
-      const level = levelMap.get(docId) || 0
-      const xPosition = (positionMap.get(level) || 0) * 300
-      positionMap.set(level, (positionMap.get(level) || 0) + 1)
-
-      const yPosition = level * 150
-
-      const isCurrentDoc = docId === documentId
-
-      nodes.push({
-        id: docId,
-        type: 'default',
-        position: { x: xPosition, y: yPosition },
-        data: {
-          label: (
-            <div className={`p-2 ${isCurrentDoc ? 'bg-blue-50 dark:bg-blue-900' : ''}`}>
-              <div className="font-semibold text-sm truncate" style={{ maxWidth: '200px' }}>
-                {doc.title}
-              </div>
-              <div className="text-xs text-gray-500 dark:text-gray-400">
-                v{doc.version || 1} • {doc.uploadedBy.slice(0, 8)}
-              </div>
-            </div>
-          )
-        },
-        sourcePosition: Position.Bottom,
-        targetPosition: Position.Top,
-        style: {
-          background: isCurrentDoc ? '#dbeafe' : '#fff',
-          border: isCurrentDoc ? '2px solid #3b82f6' : '1px solid #ddd',
-          borderRadius: '4px',
-          cursor: 'pointer'
+      if (!doc) {
+        return {
+          name: 'Unknown',
+          attributes: {
+            id: docId,
+            version: 0,
+            uploadedBy: '',
+            documentType: '',
+            isCurrent: false
+          }
         }
-      })
+      }
 
-      // Create edges to children
-      if (doc.childDocumentIds) {
-        doc.childDocumentIds.forEach(childId => {
-          if (documents[childId]) {
-            edges.push({
-              id: `${docId}-${childId}`,
-              source: docId,
-              target: childId,
-              type: 'smoothstep',
-              animated: false
-            })
-            processDocument(childId)
-          }
-        })
+      const children = doc.childDocumentIds
+        ?.map(childId => documents[childId] ? buildNode(childId) : null)
+        .filter(Boolean) as TreeNode[] || []
+
+      return {
+        name: doc.title,
+        attributes: {
+          id: doc.id,
+          version: doc.version || 1,
+          uploadedBy: doc.uploadedBy,
+          documentType: doc.documentType,
+          isCurrent: doc.id === documentId
+        },
+        children: children.length > 0 ? children : undefined
       }
     }
 
-    processDocument(rootId)
-
-    return { nodes, edges }
+    return buildNode(rootId)
   }
 
-  const handleNodeClick = useCallback((event: React.MouseEvent, node: Node) => {
-    if (onNodeClick) {
-      onNodeClick(node.id)
+  const handleNodeClick = (nodeData: any) => {
+    if (onNodeClick && nodeData.attributes?.id) {
+      onNodeClick(nodeData.attributes.id)
     }
-  }, [onNodeClick])
+  }
+
+  // Custom node rendering
+  const renderCustomNode = ({ nodeDatum }: any) => {
+    const isCurrent = nodeDatum.attributes?.isCurrent
+    const version = nodeDatum.attributes?.version || 1
+    const uploadedBy = nodeDatum.attributes?.uploadedBy || ''
+    const docType = nodeDatum.attributes?.documentType || ''
+
+    return (
+      <g>
+        {/* Node background */}
+        <rect
+          width="200"
+          height="80"
+          x="-100"
+          y="-40"
+          rx="4"
+          fill={isCurrent ? '#dbeafe' : '#ffffff'}
+          stroke={isCurrent ? '#3b82f6' : '#d1d5db'}
+          strokeWidth={isCurrent ? '2' : '1'}
+          style={{ cursor: 'pointer' }}
+        />
+
+        {/* Document type icon */}
+        <text
+          x="-85"
+          y="-15"
+          fontSize="20"
+          fill="#6b7280"
+        >
+          {docType === 'quote' ? '📝' : docType === 'link' ? '🔗' : '🖼️'}
+        </text>
+
+        {/* Title */}
+        <text
+          x="0"
+          y="-10"
+          textAnchor="middle"
+          fontSize="12"
+          fontWeight="normal"
+          fill="#111827"
+        >
+          {nodeDatum.name.length > 25
+            ? nodeDatum.name.substring(0, 22) + '...'
+            : nodeDatum.name}
+        </text>
+
+        {/* Version and owner */}
+        <text
+          x="0"
+          y="10"
+          textAnchor="middle"
+          fontSize="10"
+          fill="#6b7280"
+        >
+          v{version} • {uploadedBy.slice(0, 8)}...
+        </text>
+
+        {/* Current indicator */}
+        {isCurrent && (
+          <text
+            x="0"
+            y="28"
+            textAnchor="middle"
+            fontSize="9"
+            fontWeight="bold"
+            fill="#3b82f6"
+          >
+            CURRENT
+          </text>
+        )}
+      </g>
+    )
+  }
 
   return (
     <div
@@ -169,47 +212,84 @@ export default function ForkTreeView({
       onClick={onClose}
     >
       <div
-        className="bg-white dark:bg-gray-900 border border-gray-900 dark:border-gray-100 w-full max-w-6xl h-[80vh]"
+        className="bg-white dark:bg-gray-900 border-2 border-gray-900 dark:border-gray-100 w-full max-w-6xl h-[80vh] flex flex-col"
         onClick={e => e.stopPropagation()}
       >
-        <div className="flex justify-between items-center p-4 border-b border-gray-300 dark:border-gray-700">
-          <h2 className="text-xl font-bold text-gray-900 dark:text-white">Fork Tree</h2>
+        {/* Header */}
+        <div className="flex justify-between items-center p-4 border-b-2 border-gray-900 dark:border-gray-100">
+          <div>
+            <h2 className="text-xl font-bold text-gray-900 dark:text-white">Fork Tree</h2>
+            <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
+              Click nodes to view • Scroll to zoom • Drag to pan
+            </p>
+          </div>
           <button
             onClick={onClose}
-            className="text-gray-500 hover:text-gray-900 dark:hover:text-white text-2xl"
+            className="text-gray-500 hover:text-gray-900 dark:hover:text-white text-3xl font-bold leading-none"
           >
             ×
           </button>
         </div>
 
-        <div className="h-[calc(100%-4rem)]">
+        {/* Tree Container */}
+        <div className="flex-1 tree-container bg-gray-50 dark:bg-gray-800 relative">
           {loading && (
-            <div className="flex items-center justify-center h-full">
+            <div className="absolute inset-0 flex items-center justify-center">
               <div className="animate-spin h-12 w-12 border-b-2 border-gray-900 dark:border-gray-100"></div>
             </div>
           )}
 
           {error && (
-            <div className="flex items-center justify-center h-full">
-              <div className="text-red-600 dark:text-red-400">{error}</div>
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="text-red-600 dark:text-red-400 text-center">
+                <p className="font-bold mb-2">Error</p>
+                <p>{error}</p>
+              </div>
             </div>
           )}
 
-          {!loading && !error && (
-            <ReactFlow
-              nodes={nodes}
-              edges={edges}
-              onNodesChange={onNodesChange}
-              onEdgesChange={onEdgesChange}
+          {!loading && !error && treeData && (
+            <Tree
+              data={treeData}
+              translate={translate}
+              orientation="vertical"
+              pathFunc="step"
+              collapsible={true}
+              initialDepth={10}
+              separation={{ siblings: 1.5, nonSiblings: 2 }}
+              nodeSize={{ x: 250, y: 150 }}
+              renderCustomNodeElement={renderCustomNode}
               onNodeClick={handleNodeClick}
-              fitView
-              className="dark:bg-gray-800"
-            >
-              <Background />
-              <Controls />
-              <MiniMap />
-            </ReactFlow>
+              zoom={0.8}
+              scaleExtent={{ min: 0.1, max: 2 }}
+              enableLegacyTransitions={false}
+              styles={{
+                links: {
+                  stroke: '#9ca3af',
+                  strokeWidth: 2,
+                },
+              }}
+            />
           )}
+        </div>
+
+        {/* Footer with legend */}
+        <div className="p-3 border-t-2 border-gray-900 dark:border-gray-100 bg-white dark:bg-gray-900">
+          <div className="flex items-center gap-6 text-xs text-gray-600 dark:text-gray-400">
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 border-2 border-blue-500 bg-blue-100 rounded"></div>
+              <span>Current Document</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 border border-gray-300 bg-white rounded"></div>
+              <span>Other Versions</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span>📝 Quote</span>
+              <span>🔗 Link</span>
+              <span>🖼️ Image</span>
+            </div>
+          </div>
         </div>
       </div>
     </div>

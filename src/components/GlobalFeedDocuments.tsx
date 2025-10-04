@@ -1,6 +1,7 @@
 'use client'
 import { useState, useEffect, useRef, useCallback } from 'react'
 import DocumentEditModal from './DocumentEditModal'
+import DocumentForkModal from './DocumentForkModal'
 import DocumentVersionBrowser from './DocumentVersionBrowser'
 import ForkTreeView from './ForkTreeView'
 
@@ -64,6 +65,7 @@ export default function GlobalFeedDocuments({ filters }: GlobalFeedDocumentsProp
   const [totalResults, setTotalResults] = useState(0)
   const [selectedDocument, setSelectedDocument] = useState<FeedItem | null>(null)
   const [editingDocument, setEditingDocument] = useState<FeedItem | null>(null)
+  const [forkingDocument, setForkingDocument] = useState<FeedItem | null>(null)
   const [viewingHistory, setViewingHistory] = useState<FeedItem | null>(null)
   const [viewingForkTree, setViewingForkTree] = useState<FeedItem | null>(null)
 
@@ -230,24 +232,39 @@ export default function GlobalFeedDocuments({ filters }: GlobalFeedDocumentsProp
     setEditingDocument(item)
   }
 
-  const handleForkDocument = async (item: FeedItem) => {
+  const handleForkDocument = (item: FeedItem) => {
     const userId = localStorage.getItem('userId')
     if (!userId) {
       alert('You must be logged in to fork a document')
       return
     }
 
+    // Close the detail modal and open fork modal
+    setSelectedDocument(null)
+    setForkingDocument(item)
+  }
+
+  const handleSaveFork = async (updatedMetadata: any, changeComment: string) => {
+    if (!forkingDocument) return
+
+    const userId = localStorage.getItem('userId')
+    if (!userId) {
+      throw new Error('User not authenticated')
+    }
+
     try {
-      // Call the fork API endpoint
+      // Call the fork API endpoint with updated metadata
       const response = await fetch('/api/documents/p2p/fork', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          originalDocumentId: item.document.id,
-          originalCollectionId: item.collectionId,
-          peerId: userId
+          originalDocumentId: forkingDocument.document.id,
+          originalCollectionId: forkingDocument.collectionId,
+          peerId: userId,
+          updatedMetadata,
+          changeComment
         })
       })
 
@@ -256,26 +273,15 @@ export default function GlobalFeedDocuments({ filters }: GlobalFeedDocumentsProp
         throw new Error(error.error || 'Failed to fork document')
       }
 
-      const result = await response.json()
+      // Close the fork modal
+      setForkingDocument(null)
 
-      // Close the detail modal
-      setSelectedDocument(null)
-
-      // Create a FeedItem for the forked document to edit
-      const forkedItem: FeedItem = {
-        document: result.forkedDocument,
-        collectionName: result.collectionName,
-        collectionId: result.collectionId,
-        ownerUsername: result.ownerUsername,
-        ownerDid: userId
-      }
-
-      // Open edit modal with the forked document
-      setEditingDocument(forkedItem)
+      // Refresh the feed to show the new forked document
+      await fetchFeedItems(0)
 
     } catch (error) {
       console.error('Error forking document:', error)
-      alert(error instanceof Error ? error.message : 'Failed to fork document')
+      throw error
     }
   }
 
@@ -346,6 +352,7 @@ export default function GlobalFeedDocuments({ filters }: GlobalFeedDocumentsProp
     setEditingDocument(null)
   }
 
+
   const hasActiveFilters = filters.title || filters.keywords.length > 0 || filters.types.length > 0
 
   return (
@@ -397,7 +404,6 @@ export default function GlobalFeedDocuments({ filters }: GlobalFeedDocumentsProp
             {/* Document content based on type */}
             {item.document.documentType === 'quote' && (
               <div>
-                <div className="text-4xl mb-3">📝</div>
                 <blockquote className="italic text-gray-700 dark:text-gray-300 mb-3 line-clamp-3">
                   "{item.document.metadata?.quoteContent}"
                 </blockquote>
@@ -412,7 +418,6 @@ export default function GlobalFeedDocuments({ filters }: GlobalFeedDocumentsProp
 
             {item.document.documentType === 'link' && (
               <div>
-                <div className="text-4xl mb-3">🔗</div>
                 <h3 className="font-semibold text-gray-900 dark:text-white mb-2 line-clamp-2">
                   {item.document.title}
                 </h3>
@@ -429,7 +434,6 @@ export default function GlobalFeedDocuments({ filters }: GlobalFeedDocumentsProp
 
             {item.document.documentType === 'image' && (
               <div>
-                <div className="text-4xl mb-3">🖼️</div>
                 {ipfsContent[item.document.id] ? (
                   <img
                     src={ipfsContent[item.document.id]}
@@ -549,15 +553,17 @@ export default function GlobalFeedDocuments({ filters }: GlobalFeedDocumentsProp
                   >
                     Fork
                   </button>
-                  <button
-                    onClick={(e) => {
-                      handleEditDocument(selectedDocument, e)
-                      setSelectedDocument(null)
-                    }}
-                    className="px-4 py-2 bg-gray-900 dark:bg-gray-100 text-white dark:text-black hover:bg-gray-700 dark:hover:bg-gray-300 text-sm"
-                  >
-                    Edit
-                  </button>
+                  {selectedDocument.document.uploadedBy === localStorage.getItem('userId') && (
+                    <button
+                      onClick={(e) => {
+                        handleEditDocument(selectedDocument, e)
+                        setSelectedDocument(null)
+                      }}
+                      className="px-4 py-2 bg-gray-900 dark:bg-gray-100 text-white dark:text-black hover:bg-gray-700 dark:hover:bg-gray-300 text-sm"
+                    >
+                      Edit
+                    </button>
+                  )}
                   <button
                     onClick={() => setSelectedDocument(null)}
                     className="text-gray-500 hover:text-gray-900 dark:hover:text-white text-2xl"
@@ -812,6 +818,15 @@ export default function GlobalFeedDocuments({ filters }: GlobalFeedDocumentsProp
           document={editingDocument.document}
           onClose={() => setEditingDocument(null)}
           onSave={handleSaveEdit}
+        />
+      )}
+
+      {/* Fork Modal */}
+      {forkingDocument && (
+        <DocumentForkModal
+          document={forkingDocument.document}
+          onClose={() => setForkingDocument(null)}
+          onSave={handleSaveFork}
         />
       )}
 

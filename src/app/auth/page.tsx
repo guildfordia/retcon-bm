@@ -16,9 +16,9 @@ export default function P2PAuth() {
   const DUMMY_PRIVATE_KEY = 'LS0tLS1CRUdJTiBQUklWQVRFIEtFWS0tLS0tCk1DNENBUUF3QlFZREsyVndCQ0lFSU9qRmxmV0tQcVFvNHhCVFphOGlwVmFmd0JKQWl3cFpEbjRvOCtENi9VMzgKLS0tLS1FTkQgUFJJVkFURSBLRVktLS0tLQo='
 
   useEffect(() => {
-    // Check if already authenticated
-    const token = localStorage.getItem('token');
-    if (token) {
+    // Check if already authenticated (check for user info which indicates logged in)
+    const userId = localStorage.getItem('userId');
+    if (userId) {
       router.push('/feed');
       return;
     }
@@ -54,17 +54,29 @@ export default function P2PAuth() {
 
       if (response.ok) {
         if (endpoint.includes('login')) {
-          localStorage.setItem('token', result.token)
+          // JWT token is now stored in httpOnly cookie (secure)
+          // Only store user metadata and P2P keys locally
           localStorage.setItem('userId', result.identity.did)
           localStorage.setItem('username', data.username || 'theodore')
           localStorage.setItem('authMode', 'p2p')
+
+          // P2P private key MUST be stored client-side for P2P operations
+          // ⚠️ WARNING: This is required for P2P but is a security trade-off
           localStorage.setItem('p2pPrivateKey', data.privateKey)
           localStorage.setItem('p2pPublicKey', result.identity.did)
 
           showMessage('P2P login successful! Redirecting...')
           setTimeout(() => router.push('/feed'), 1000)
         } else {
+          // Registration successful
           showMessage(`P2P identity created! DID: ${result.identity.did.slice(0, 20)}...`)
+
+          // Show the private key to user for backup
+          if (result.privateKey) {
+            showMessage(`⚠️ SAVE YOUR PRIVATE KEY: ${result.privateKey.slice(0, 40)}... (Full key in console)`, true)
+            console.warn('🔑 BACKUP THIS PRIVATE KEY:', result.privateKey)
+          }
+
           setUsername('')
           setPrivateKey('')
         }

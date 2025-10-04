@@ -44,9 +44,8 @@ export async function POST(request: NextRequest) {
       .setExpirationTime('24h')
       .sign(cryptoPrivateKey)
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       message: 'P2P authentication successful',
-      token: sessionToken,
       identity: {
         did,
         type: 'p2p',
@@ -54,6 +53,29 @@ export async function POST(request: NextRequest) {
         lastSeen: Date.now()
       }
     })
+
+    // Set JWT token as httpOnly cookie for security
+    response.cookies.set('auth_token', sessionToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 60 * 60 * 24, // 24 hours
+      path: '/'
+    })
+
+    // Also set user info in separate cookie for client-side access
+    response.cookies.set('user_info', JSON.stringify({
+      did,
+      username: username || 'theodore'
+    }), {
+      httpOnly: false, // Allow client-side access
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 60 * 60 * 24,
+      path: '/'
+    })
+
+    return response
 
   } catch (error) {
     console.error('P2P login error:', error)

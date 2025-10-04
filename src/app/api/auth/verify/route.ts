@@ -7,16 +7,19 @@ const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-producti
 
 export async function GET(request: NextRequest) {
   try {
-    const authorization = request.headers.get('authorization')
+    // Try to get token from httpOnly cookie first (preferred), then fallback to Authorization header
+    let token = request.cookies.get('auth_token')?.value
 
-    if (!authorization || !authorization.startsWith('Bearer ')) {
-      return NextResponse.json(
-        { error: 'No token provided' },
-        { status: 401 }
-      )
+    if (!token) {
+      const authorization = request.headers.get('authorization')
+      if (!authorization || !authorization.startsWith('Bearer ')) {
+        return NextResponse.json(
+          { error: 'No token provided' },
+          { status: 401 }
+        )
+      }
+      token = authorization.substring(7)
     }
-
-    const token = authorization.substring(7)
 
     try {
       // Try to decode without verification first to check token type

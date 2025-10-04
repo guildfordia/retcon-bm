@@ -27,17 +27,19 @@ interface P2PDocument {
   }>
 }
 
-interface DocumentEditModalProps {
+interface DocumentForkModalProps {
   document: P2PDocument
   onClose: () => void
   onSave: (updatedMetadata: any, changeComment: string) => Promise<void>
 }
 
-export default function DocumentEditModal({ document, onClose, onSave }: DocumentEditModalProps) {
+export default function DocumentForkModal({ document, onClose, onSave }: DocumentForkModalProps) {
   const [metadata, setMetadata] = useState(document.metadata || {})
   const [changeComment, setChangeComment] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [newImageFile, setNewImageFile] = useState<File | null>(null)
+  const [newImagePreview, setNewImagePreview] = useState<string | null>(null)
 
   const handleSave = async () => {
     if (!changeComment.trim()) {
@@ -49,7 +51,34 @@ export default function DocumentEditModal({ document, onClose, onSave }: Documen
     setError('')
 
     try {
-      await onSave(metadata, changeComment)
+      let finalMetadata = { ...metadata }
+
+      // If there's a new image file, upload it to IPFS first
+      if (newImageFile && document.documentType === 'image') {
+        const formData = new FormData()
+        formData.append('file', newImageFile)
+
+        const uploadResponse = await fetch('/orbitdb/ipfs/upload', {
+          method: 'POST',
+          body: formData
+        })
+
+        if (!uploadResponse.ok) {
+          throw new Error('Failed to upload image to IPFS')
+        }
+
+        const uploadData = await uploadResponse.json()
+
+        // Update metadata with new IPFS CID
+        finalMetadata = {
+          ...finalMetadata,
+          ipfsCID: uploadData.cid,
+          contentType: uploadData.contentType,
+          contentSize: uploadData.size
+        }
+      }
+
+      await onSave(finalMetadata, changeComment)
       onClose()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save changes')
@@ -67,6 +96,19 @@ export default function DocumentEditModal({ document, onClose, onSave }: Documen
     updateMetadataField('keywords', keywords)
   }
 
+  const handleImageFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      setNewImageFile(file)
+      // Create preview
+      const reader = new FileReader()
+      reader.onloadend = () => {
+        setNewImagePreview(reader.result as string)
+      }
+      reader.readAsDataURL(file)
+    }
+  }
+
   return (
     <div
       className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50"
@@ -80,10 +122,10 @@ export default function DocumentEditModal({ document, onClose, onSave }: Documen
         <div className="sticky top-0 bg-white dark:bg-gray-900 border-b border-gray-900 dark:border-gray-100 p-6 flex justify-between items-start">
           <div>
             <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
-              Edit Document
+              Fork Document
             </h2>
             <p className="text-sm text-gray-600 dark:text-gray-400">
-              {document.documentType.toUpperCase()} • Version {document.version || 1}
+              {document.documentType.toUpperCase()} • Creating new version from {document.version || 1}
             </p>
           </div>
           <button
@@ -94,20 +136,20 @@ export default function DocumentEditModal({ document, onClose, onSave }: Documen
           </button>
         </div>
 
-        {/* Edit Form */}
+        {/* Fork Form */}
         <div className="p-6 space-y-6">
           {/* Quote Metadata */}
           {document.documentType === 'quote' && (
             <>
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  Quote Content (read-only)
+                  Quote Content *
                 </label>
                 <textarea
                   value={metadata.quoteContent || ''}
-                  readOnly
+                  onChange={e => updateMetadataField('quoteContent', e.target.value)}
                   rows={4}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white cursor-not-allowed"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-black text-gray-900 dark:text-white"
                 />
               </div>
 
@@ -206,13 +248,13 @@ export default function DocumentEditModal({ document, onClose, onSave }: Documen
             <>
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  URL (read-only)
+                  URL *
                 </label>
                 <input
                   type="url"
                   value={metadata.url || ''}
-                  readOnly
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white cursor-not-allowed"
+                  onChange={e => updateMetadataField('url', e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-black text-gray-900 dark:text-white"
                 />
               </div>
 
@@ -283,6 +325,23 @@ export default function DocumentEditModal({ document, onClose, onSave }: Documen
           {/* Image Metadata */}
           {document.documentType === 'image' && (
             <>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Upload New Image (optional)
+                </label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleImageFileChange}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-black text-gray-900 dark:text-white"
+                />
+                {newImagePreview && (
+                  <div className="mt-2">
+                    <img src={newImagePreview} alt="Preview" className="max-h-48 object-contain" />
+                  </div>
+                )}
+              </div>
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   Title *
@@ -394,7 +453,7 @@ export default function DocumentEditModal({ document, onClose, onSave }: Documen
             disabled={saving}
             className="px-6 py-2 bg-gray-900 dark:bg-gray-100 text-white dark:text-black hover:bg-gray-700 dark:hover:bg-gray-300 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {saving ? 'Saving...' : 'Save Changes'}
+            {saving ? 'Creating Fork...' : 'Create Fork'}
           </button>
         </div>
       </div>

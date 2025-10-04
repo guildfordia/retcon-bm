@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { orbitdbClient } from '@/lib/orbitdb-client'
 import { userCollectionRegistry } from '@/lib/user-collection-registry'
+import { sanitizeMetadata, sanitizeUserInput } from '@/lib/sanitize'
 import { randomBytes } from 'crypto'
 
 // Fork P2P Document - Create a new document based on the original
@@ -10,15 +11,21 @@ export async function POST(request: NextRequest) {
     const {
       originalDocumentId,
       originalCollectionId,
-      peerId
+      peerId,
+      updatedMetadata,
+      changeComment
     } = body
 
-    if (!originalDocumentId || !originalCollectionId || !peerId) {
+    if (!originalDocumentId || !originalCollectionId || !peerId || !updatedMetadata || !changeComment) {
       return NextResponse.json(
-        { error: 'Original document ID, original collection ID, and peer ID are required' },
+        { error: 'Original document ID, original collection ID, peer ID, updated metadata, and change comment are required' },
         { status: 400 }
       )
     }
+
+    // Sanitize inputs to prevent XSS
+    const sanitizedMetadata = sanitizeMetadata(updatedMetadata)
+    const sanitizedComment = sanitizeUserInput(changeComment)
 
     // Check OrbitDB health
     const health = await orbitdbClient.health()
@@ -44,40 +51,74 @@ export async function POST(request: NextRequest) {
     // Generate a new ID for the forked document
     const forkedDocumentId = randomBytes(16).toString('hex')
 
-    // Create the forked document with all metadata from original
+    // Determine display title based on document type
+    let displayTitle = originalDocument.title
+    if (originalDocument.documentType === 'link') {
+      displayTitle = sanitizedMetadata.siteName || sanitizedMetadata.title || originalDocument.title
+    } else if (originalDocument.documentType === 'quote') {
+      displayTitle = sanitizedMetadata.title || originalDocument.title
+    } else if (originalDocument.documentType === 'image') {
+      displayTitle = sanitizedMetadata.title || originalDocument.title
+    }
+
+    // Create the forked document with updated metadata
     const forkedDocument = {
       ...originalDocument,
       id: forkedDocumentId,
-      version: 1, // Reset version to 1
-      versionHistory: [], // Clear version history
+      metadata: sanitizedMetadata, // Use sanitized metadata
+      title: displayTitle,
+      version: 1, // Start at version 1
+      versionHistory: [
+        {
+          version: 1, // Version 1 is the initial fork
+          editedBy: peerId,
+          editedAt: Date.now(),
+          changeComment: sanitizedComment, // User's fork comment describes version 1 (sanitized)
+          previousMetadata: { ...originalDocument.metadata } // What it was forked from
+        }
+      ],
       created: Date.now(),
       lastAccessed: Date.now(),
       uploadedBy: peerId,
       parentDocumentId: originalDocumentId, // Link to parent
-      childDocumentIds: [] // Initialize empty children array
+      childDocumentIds: [], // Initialize empty children array
+      // If new IPFS CID is provided (for images), update it at document level
+      ...(sanitizedMetadata.ipfsCID && {
+        ipfsCID: sanitizedMetadata.ipfsCID,
+        contentType: sanitizedMetadata.contentType,
+        contentSize: sanitizedMetadata.contentSize
+      })
     }
 
     // Find or create the user's collection
-    // For now, we'll use a simple naming convention: collection-{userId}-main
-    const userCollectionStoreName = `collection-${peerId}-main`
+    // Get all user collections from the registry
+    const allCollections = await userCollectionRegistry.getUserCollections(peerId)
 
-    // Try to get the user's collection, create if doesn't exist
-    let userCollection = await orbitdbClient.getCollection(userCollectionStoreName)
+    let userCollectionStoreName: string
+    let userCollection: any
 
-    if (!userCollection) {
-      // Create the user's default collection
+    if (allCollections.length > 0) {
+      // Use the first (default) collection
+      userCollectionStoreName = allCollections[0]
+      userCollection = await orbitdbClient.getCollection(userCollectionStoreName)
+    } else {
+      // Create a new collection for this user
+      // Get username from request or extract from peerId
+      const username = body.username || peerId.split(':').pop()?.slice(0, 10) || peerId
+
       userCollection = await orbitdbClient.createCollection(
         peerId,
-        `${peerId}'s Collection`,
-        'Default collection'
+        `${username}'s collection`, // Auto-naming: username's collection
+        '' // No description
       )
+      userCollectionStoreName = userCollection.storeName
+
+      // Register it in the global registry
+      await userCollectionRegistry.addUserCollection(peerId, userCollectionStoreName)
     }
 
     // Add the forked document to the user's collection
     await orbitdbClient.addDocumentToCollection(userCollectionStoreName, forkedDocument)
-
-    // Register the user's collection in the global registry so it appears in the feed
-    await userCollectionRegistry.addUserCollection(peerId, userCollectionStoreName)
 
     // Update the original document to add this fork as a child
     const updatedOriginalDocument = {
